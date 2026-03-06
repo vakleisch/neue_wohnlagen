@@ -14,6 +14,19 @@ data <- raeumliche_daten
 # Fixe geometry Spalte
 st_geometry(data) <- "geom"
 
+# Reihenfolge der Wohnlagen logisch festlegen
+data$wohnlage_bedeutung <- factor(
+  data$wohnlage_bedeutung,
+  levels = c(
+    "durchschnittliche Lage",
+    "gute Lage",
+    "beste Lage",
+    "zentrale durchschnittliche Lage",
+    "zentrale gute Lage",
+    "zentrale beste Lage"
+  )
+)
+
 # Datentypen anpassen --------------------
 # Kategoriale Variablen sicher in Faktoren umwandeln, OHNE die Geometrie zu berühren
 data <- data %>% 
