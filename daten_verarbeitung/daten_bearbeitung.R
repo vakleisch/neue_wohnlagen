@@ -57,6 +57,7 @@ model_data <- data %>%
          spielplatz,
          kitakigaho,
          ortszentru,
+         wohnlage_ebene,
          wohnlage_bedeutung,
          brw,
          kaufkraft_pro_kopf_blosei,
@@ -73,12 +74,22 @@ model_data <- data %>%
          geom)
 model_data_complete <- na.omit(model_data) # Zeilen mit NA entfernen
 
+# Für gam modell Ausprägungen Zielvariable anpassen
+model_data_complete$wohnlage_ebene <- as.numeric(model_data_complete$wohnlage_ebene) - 1
+
+# Nach zentral und nicht-zentral unterscheiden
+# zentral (filter for Wohnlage = 3, 4, 5)
+model_data_complete_zentral <- model_data_complete %>%
+  filter(wohnlage_ebene %in% c(3, 4, 5)) %>%
+  mutate(wohnlage_ebene = wohnlage_ebene - 3) # Encoding anpassen
+
+# außerhalb (filter for Wohnlage = 0, 1, 2)
+model_data_complete_ausserhalb <- model_data_complete %>%
+  filter(wohnlage_ebene %in% c(0, 1, 2))
 
 
 
-# Modelldatensatz erstellen
-
-# NA's im ganzen Datensatz zählen
+# NA's im Modelldatensatz zählen
 na_counts <- sapply(model_data, function(x) sum(is.na(x)))
 na_counts
 
