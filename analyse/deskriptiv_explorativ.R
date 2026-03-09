@@ -5,15 +5,75 @@ library(data.table)
 library(dplyr)
 
 # Variablen betrachten
-# Kategoriale Variablen 
 
-# 1. Spaltennamen extrahieren (ohne die geom-Spalte!)
+# Rohadten----------------------------------------------------------------------
+
+# 1. Kategorische Spaltennamen extrahieren
 data_colnames_categorial <- data %>% 
-  st_drop_geometry() %>% # <--- Das ist der Lebensretter!
+  st_drop_geometry() %>% 
+  dplyr::select(geb_nutz, gemarkung_, grundsch_k, # zusammmefassen
+                layer, zentraler_bereich, wohnlage_bedeutung, 
+                spielpl_k, kita_k, ortsz_k) %>% 
+  colnames()
+
+# 2. Alle numerischen Spalten automatisch finden
+data_colnames_numeric <- data %>% 
+  st_drop_geometry() %>% 
+  dplyr::select(where(is.numeric)) %>% # Wählt automatisch alle Zahlen-Spalten aus
+  colnames()
+
+# Kategorische Spalten
+
+for(i in data_colnames_categorial) {
+  
+  plot <- ggplot(data, aes(x = .data[[i]])) +
+    geom_bar(color = "black") +
+    labs(title = paste("Verteilung von", i), x = i, y = "Häufigkeit") +
+    theme_bw()
+  
+  print(plot) 
+}
+
+# Numerische Spalten
+
+for(i in data_colnames_numeric) {
+  
+  plot <- ggplot(data, aes(x = .data[[i]])) +
+    # geom_density anstelle von geom_bar nutzen
+    geom_density(fill = "steelblue", alpha = 0.5, color = "black") + 
+    labs(title = paste("Density of", i), x = i, y = "Density") +
+    theme_bw()
+  
+  print(plot)
+}
+
+# Range für alle numerischen Variablen
+data %>%
+  reframe(across(where(is.numeric), ~ range(.x, na.rm = TRUE)))
+
+# Anzahl an Ausprägungen der kategorischen Variablen
+data %>%
+  st_drop_geometry() %>%
+  summarise(across(all_of(data_colnames_categorial),
+                   ~ n_distinct(.x)))
+
+
+# Modelldaten-------------------------------------------------------------------
+
+# 1. Kategorische Spaltennamen extrahieren
+data_colnames_categorial <- model_data_complete %>% 
+  st_drop_geometry() %>% 
   dplyr::select(gemarkung_, layer, zentraler_bereich, wohnlage_bedeutung) %>% 
   colnames()
 
-# 2. Plots in der Schleife erstellen
+# 2. Alle numerischen Spalten automatisch finden
+data_colnames_numeric <- model_data_complete %>% 
+  st_drop_geometry() %>% 
+  dplyr::select(where(is.numeric)) %>% # Wählt automatisch alle Zahlen-Spalten aus
+  colnames()
+
+# Kategorische Spalten
+
 for(i in data_colnames_categorial) {
   
   plot <- ggplot(model_data_complete, aes(x = .data[[i]])) +
@@ -21,19 +81,11 @@ for(i in data_colnames_categorial) {
     labs(title = paste("Verteilung von", i), x = i, y = "Häufigkeit") +
     theme_bw()
   
-  print(plot) # <--- Wichtig: In einer neuen Zeile OHNE das + davor!
+  print(plot) 
 }
 
+# Numerische Spalten
 
-
-
-# 1. Alle numerischen Spalten automatisch finden (ohne die geom-Spalte!)
-data_colnames_numeric <- model_data_complete %>% 
-  st_drop_geometry() %>% 
-  dplyr::select(where(is.numeric)) %>% # Wählt automatisch alle Zahlen-Spalten aus
-  colnames()
-
-# 2. Schleife für die Dichtefunktionen erstellen
 for(i in data_colnames_numeric) {
   
   plot <- ggplot(model_data_complete, aes(x = .data[[i]])) +
@@ -44,6 +96,19 @@ for(i in data_colnames_numeric) {
   
   print(plot)
 }
+
+# Range für alle numerischen Variablen
+model_data_complete %>%
+  reframe(across(where(is.numeric), ~ range(.x, na.rm = TRUE)))
+
+# Anzahl an Ausprägungen der kategorischen Variablen
+model_data_complete %>%
+  st_drop_geometry() %>%
+  summarise(across(all_of(data_colnames_categorial),
+                   ~ n_distinct(.x)))
+
+
+
 
 wohnlage_farben <- c(
   "durchschnittliche Lage" = "#e8f5a4",

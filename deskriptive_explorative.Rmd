@@ -1,0 +1,182 @@
+---
+title: "deskriptive_explorative"
+output: pdf_document
+---
+
+```{r setup, include=FALSE, warning=FALSE, message=FALSE}
+library(here)
+source(here("daten_verarbeitung", "daten_bearbeitung.R"))
+library(ggplot2)
+library(data.table)
+library(dplyr)
+library(sf)
+```
+
+
+# Variablen betrachten
+
+## Rohdaten
+
+```{r, echo=FALSE}
+# 1. Kategorische Spaltennamen extrahieren
+data_colnames_categorial <- data %>% 
+  st_drop_geometry() %>% 
+  dplyr::select(geb_nutz, gemarkung_, grundsch_k, # zusammmefassen
+                layer, zentraler_bereich, wohnlage_bedeutung, 
+                spielpl_k, kita_k, ortsz_k) %>% 
+  colnames()
+
+# 2. Alle numerischen Spalten automatisch finden
+data_colnames_numeric <- data %>% 
+  st_drop_geometry() %>% 
+  dplyr::select(where(is.numeric)) %>% # Wählt automatisch alle Zahlen-Spalten aus
+  colnames()
+
+# Kategorische Spalten
+
+for(i in data_colnames_categorial) {
+  
+  plot <- ggplot(data, aes(x = .data[[i]])) +
+    geom_bar(color = "black") +
+    labs(title = paste("Verteilung von", i), x = i, y = "Häufigkeit") +
+    theme_bw()
+  
+  print(plot) 
+}
+
+# Numerische Spalten
+
+for(i in data_colnames_numeric) {
+  
+  plot <- ggplot(data, aes(x = .data[[i]])) +
+    # geom_density anstelle von geom_bar nutzen
+    geom_density(fill = "steelblue", alpha = 0.5, color = "black") + 
+    labs(title = paste("Density of", i), x = i, y = "Density") +
+    theme_bw()
+  
+  print(plot)
+}
+
+
+```
+
+### Range der numerischen Variablen
+
+```{r, echo=FALSE}
+# Range für alle numerischen Variablen
+data %>%
+  reframe(across(where(is.numeric), ~ range(.x, na.rm = TRUE)))
+
+```
+
+### Anzahl an Ausprägungen der kategorischen Variablen
+
+```{r, echo=FALSE}
+# Anzahl an Ausprägungen der kategorischen Variablen
+data %>%
+  st_drop_geometry() %>%
+  summarise(across(all_of(data_colnames_categorial),
+                   ~ n_distinct(.x)))
+```
+
+
+
+
+## Modelldaten
+
+```{r, echo =FALSE}
+# 1. Kategorische Spaltennamen extrahieren
+data_colnames_categorial <- model_data_complete %>% 
+  st_drop_geometry() %>% 
+  dplyr::select(gemarkung_, layer, zentraler_bereich, wohnlage_bedeutung) %>% 
+  colnames()
+
+# 2. Alle numerischen Spalten automatisch finden
+data_colnames_numeric <- model_data_complete %>% 
+  st_drop_geometry() %>% 
+  dplyr::select(where(is.numeric)) %>% # Wählt automatisch alle Zahlen-Spalten aus
+  colnames()
+
+# Kategorische Spalten
+
+for(i in data_colnames_categorial) {
+  
+  plot <- ggplot(model_data_complete, aes(x = .data[[i]])) +
+    geom_bar(color = "black") +
+    labs(title = paste("Verteilung von", i), x = i, y = "Häufigkeit") +
+    theme_bw()
+  
+  print(plot) 
+}
+
+# Numerische Spalten
+
+for(i in data_colnames_numeric) {
+  
+  plot <- ggplot(model_data_complete, aes(x = .data[[i]])) +
+    # geom_density anstelle von geom_bar nutzen
+    geom_density(fill = "steelblue", alpha = 0.5, color = "black") + 
+    labs(title = paste("Density of", i), x = i, y = "Density") +
+    theme_bw()
+  
+  print(plot)
+}
+
+```
+
+### Range der numerischen Variablen
+
+```{r, echo=FALSE}
+# Range für alle numerischen Variablen
+model_data_complete %>%
+  reframe(across(where(is.numeric), ~ range(.x, na.rm = TRUE)))
+
+```
+
+### Anzahl an Ausprägungen der kategorischen Variablen
+
+```{r, echo=FALSE}
+# Anzahl an Ausprägungen der kategorischen Variablen
+model_data_complete %>%
+  st_drop_geometry() %>%
+  summarise(across(all_of(data_colnames_categorial),
+                   ~ n_distinct(.x)))
+```
+
+
+# Karten
+
+```{r, echo=FALSE}
+wohnlage_farben <- c(
+  "durchschnittliche Lage" = "#e8f5a4",
+  "gute Lage" = "#afe391",
+  "beste Lage" = "#7FCDBB",
+  "zentrale durchschnittliche Lage" = "#41B6C4",
+  "zentrale gute Lage" = "#1f5a82",
+  "zentrale beste Lage" = "#271352"
+)
+
+karte_punkte <- ggplot(data = model_data_complete) +
+  # HIER DIE ÄNDERUNG: wohnlage_bedeutung statt wohnlage_ebene
+  geom_sf(aes(color = wohnlage_bedeutung), size = 0.1, alpha = 0.3) +
+  scale_color_manual(values = wohnlage_farben) +
+  labs(
+    fill = "Wohnlage",
+    color = "Wohnlage"
+  ) +
+  guides(
+    color = guide_legend(override.aes = list(alpha = 1, size = 2)) 
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text = element_blank(),       
+    axis.ticks = element_blank(),      
+    panel.grid = element_blank(),      
+    panel.border = element_blank(),    
+    axis.title = element_blank()
+  )
+
+karte_punkte
+
+```
+
