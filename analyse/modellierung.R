@@ -29,7 +29,7 @@ variablen_neu <- c(
   "erreichbarkeit_naechstehaltestelle_in_minuten_adr",
   "erreichbarkeit_u10ha_in_metern_adr",
   "flaeche_qm_sv",
-  "wohnflaeche_je_ew_adr",
+  "wohnflaeche_je_ew_adr_log",
   "anteil_vf_sv",
   "anteil_gf_sv",
   "anteil_ve_sv",
@@ -59,10 +59,10 @@ formula_list1 <- list(wohnlage_ebene ~
                                 s(erreichbarkeit_naechstehaltestelle_in_minuten_adr, k=10, bs = "cr") +
                              #   s(erreichbarkeit_u10ha_in_metern_adr, k=10) +
                                 s(flaeche_qm_sv, k=10, bs = "cr") +
-                                s(wohnflaeche_je_ew_adr, k=10, bs = "cr") +
+                                s(wohnflaeche_je_ew_adr_log, k=10, bs = "cr") +
                                 s(anteil_vf_sv, k=10, bs = "cr") +
-                                s(anteil_gf_sv, k=10, bs = "cr") +
-                                s(anteil_ve_sv, k=10, bs = "cr") #+
+                                s(anteil_gf_sv, k=10, bs = "cr") #+
+                              #  s(anteil_ve_sv, k=10, bs = "cr") #+
                                # s(anteil_beb_sv , k=10)
                       , 
                       ~ #zentraler_bereich +
@@ -71,20 +71,54 @@ formula_list1 <- list(wohnlage_ebene ~
                                 s(erreichbarkeit_naechstehaltestelle_in_minuten_adr, k=10, bs = "cr") +
                              #   s(erreichbarkeit_u10ha_in_metern_adr, k=10) +
                                 s(flaeche_qm_sv, k=10, bs = "cr") +
-                                s(wohnflaeche_je_ew_adr, k=10, bs = "cr") +
+                                s(wohnflaeche_je_ew_adr_log, k=10, bs = "cr") +
                                 s(anteil_vf_sv, k=10, bs = "cr") +
-                                s(anteil_gf_sv, k=10, bs = "cr") +
-                                s(anteil_ve_sv, k=10, bs = "cr")# +
+                                s(anteil_gf_sv, k=10, bs = "cr")# +
+                              #  s(anteil_ve_sv, k=10, bs = "cr")# +
                                # s(anteil_beb_sv , k=10)
                       )
 
+gam_model_ausserhalb <- gam(
+  formula = formula_list1,
+  data = model_data_complete_ausserhalb,
+  family = mgcv::multinom(K = 2), # weil 3 Kategorien
+  method = "REML", 
+  optimizer = "efs",
+  control = gam.control(trace = TRUE, keepData = FALSE), # reduziert Größe 
+)
+
+# Modell speichern
+saveRDS(gam_model_ausserhalb, file = "modelle/gam_model_ausserhalb.rds")
+
+
+formula_list2 <- list(
+  wohnlage_ebene ~ 
+    s(erreichbarkeit_gr10ha_in_metern_adr, k=5, bs="cr") +
+    s(erreichbarkeit_innenstadt_in_minuten_adr, k=5, bs="cr") +
+    s(erreichbarkeit_naechstehaltestelle_in_minuten_adr, k=5, bs="cr") +
+    s(flaeche_qm_sv, k=5, bs="cr") +
+    s(wohnflaeche_je_ew_adr_log, k=5, bs="cr") +
+    s(anteil_vf_sv, k=5, bs="cr") +
+    s(anteil_gf_sv, k=5, bs="cr"),
+  ~ 
+    s(erreichbarkeit_gr10ha_in_metern_adr, k=5, bs="cr") +
+    s(erreichbarkeit_innenstadt_in_minuten_adr, k=5, bs="cr") +
+    s(erreichbarkeit_naechstehaltestelle_in_minuten_adr, k=5, bs="cr") +
+    s(flaeche_qm_sv, k=5, bs="cr") +
+    s(wohnflaeche_je_ew_adr_log, k=5, bs="cr") +
+    s(anteil_vf_sv, k=5, bs="cr") +
+    s(anteil_gf_sv, k=5, bs="cr")
+)
+
 
 gam_model_zentral <- gam(
-  formula = formula_list1,
+  formula = formula_list2,
   data = model_data_complete_zentral,
   family = mgcv::multinom(K = 2), # weil 3 Kategorien
   method = "REML", 
   optimizer = "efs",
   control = gam.control(trace = TRUE, keepData = FALSE), # reduziert Größe 
-  select = TRUE
 )
+
+# Modell speichern
+saveRDS(gam_model_zentral, file = "modelle/gam_model_zentral.rds")

@@ -52,9 +52,6 @@ data <- data %>%
   )
 
 
-# Negative Werte korrigieren
-summary(data %>% select(all_of(log_vars)))
-# Probleme:  we_adr, wohnflaeche_je_ew_adr, geschossflaeche_laeden_gastro_adr
 
 # Log transformieren (Rechtsschiefe Vars)
 
@@ -70,6 +67,11 @@ log_vars <- c(
   "brw", 
   "sum_gf_sv"
 )
+
+
+# Negative Werte korrigieren
+summary(data %>% select(all_of(log_vars)))
+# Probleme:  we_adr, wohnflaeche_je_ew_adr, geschossflaeche_laeden_gastro_adr
 
 data <- data %>%
   # Schritt A: Mache aus allen Werten unter 0 saubere NA-Werte
@@ -92,32 +94,32 @@ model_data <- data %>%
   select(gemarkung_,
          layer,
          zentraler_bereich,
-         ewo_adr,
-         we_adr,
+         ewo_adr_log,
+         we_adr_log,
          anteil_gebauede_1bis2_we_adr,
-         anteil_we_gebaeude_4bis9_geschosse_adr,
-         geschossflaeche_laeden_gastro_adr,
+         anteil_we_gebaeude_4bis9_geschosse_adr_log,
+         geschossflaeche_laeden_gastro_adr_log,
          erreichbarkeit_gr10ha_in_metern_adr, # (!) haben beide die gleiche 
          erreichbarkeit_u10ha_in_metern_adr,   # Eigenschaften 
          erreichbarkeit_innenstadt_in_minuten_adr,
          erreichbarkeit_naechstehaltestelle_in_minuten_adr,
-         wohnflaeche_je_ew_adr,
-         wohnberech, # nochmal schauen was diese variablen beschreiben
-         wohnbere_1, #
-         wohnbere_2, #
+         wohnflaeche_je_ew_adr_log,
+       #  wohnberech, #  = wohnbere_1 + wohnbere_2 (!)
+         wohnbere_1_log, #
+         wohnbere_2_log, #
          grundschul_num,
          spielplatz_num,
          kitakigaho_num,
          ortszentru_num,
          wohnlage_ebene,
          wohnlage_bedeutung,
-         brw,
+         brw_log,
          kaufkraft_pro_kopf_blosei,
          kaufkraft_pro_kopf_blo,
          flaeche_qm_sv,
         # sum_flaeche_vf_sv, # evt hinzufügen
          anteil_vf_sv,
-        # sum_gf_sv,
+        # sum_gf_sv_log,
          anteil_gf_sv,
         # sum_ve_sv,
          anteil_ve_sv,
