@@ -34,6 +34,58 @@ data <- data %>%
                   spielpl_k, kita_k, ortsz_k, wohnlage_ebene, wohnlage_bedeutung), 
                 as.factor))
 
+# Kita, grundschul, ortszentru und kita variablen fixen (von char zu num)
+data <- data %>%
+  mutate(
+    across(
+      # 1. Welche Spalten sollen bearbeitet werden?
+      c(kitakigaho, grundschul, spielplatz, ortszentru), 
+      # 2. Was soll mit diesen Spalten passieren? (.x steht für die jeweilige Spalte)
+      ~ case_when(
+        .x == "n.A." ~ NA_real_, 
+        TRUE ~ (as.numeric(sub(" - .*", "", .x)) + 
+                  as.numeric(sub(".* - ", "", .x))) / 2
+      ),
+      # 3. Wie sollen die neuen Spalten heißen? (z.B. grundschul_num)
+      .names = "{.col}_num" 
+    )
+  )
+
+
+# Negative Werte korrigieren
+summary(data %>% select(all_of(log_vars)))
+# Probleme:  we_adr, wohnflaeche_je_ew_adr, geschossflaeche_laeden_gastro_adr
+
+# Log transformieren (Rechtsschiefe Vars)
+
+log_vars <- c(
+  "ewo_adr", 
+  "we_adr", 
+  "anteil_we_gebaeude_4bis9_geschosse_adr", 
+  "geschossflaeche_laeden_gastro_adr", 
+  "wohnflaeche_je_ew_adr", 
+  "wohnberech", 
+  "wohnbere_1", 
+  "wohnbere_2", 
+  "brw", 
+  "sum_gf_sv"
+)
+
+data <- data %>%
+  # Schritt A: Mache aus allen Werten unter 0 saubere NA-Werte
+ # mutate(across(
+ #   all_of(log_vars), 
+ #   ~ ifelse(. < 0, NA, .)
+  #)) %>%
+  # Schritt B: Jetzt gefahrlos logarithmieren
+  mutate(across(
+    all_of(log_vars), 
+    ~ log1p(.), 
+    .names = "{.col}_log"
+  ))
+
+
+
 
 # Modelldatensatz
 model_data <- data %>% 
@@ -53,10 +105,10 @@ model_data <- data %>%
          wohnberech, # nochmal schauen was diese variablen beschreiben
          wohnbere_1, #
          wohnbere_2, #
-         grundschul,
-         spielplatz,
-         kitakigaho,
-         ortszentru,
+         grundschul_num,
+         spielplatz_num,
+         kitakigaho_num,
+         ortszentru_num,
          wohnlage_ebene,
          wohnlage_bedeutung,
          brw,
