@@ -52,34 +52,80 @@ corrplot(korr_matrix_neu, method = "color", type = "upper",
          number.cex = 0.7)
 
 
-formula_list1 <- list(wohnlage_ebene ~ 
+formula_list1a <- list(wohnlage_ebene ~ 
                         #zentraler_bereich +
-                                s(erreichbarkeit_gr10ha_in_metern_adr, k=10, bs = "cr") +
-                                s(erreichbarkeit_innenstadt_in_minuten_adr, k=10, bs = "cr") +
-                                s(erreichbarkeit_naechstehaltestelle_in_minuten_adr, k=10, bs = "cr") +
-                             #   s(erreichbarkeit_u10ha_in_metern_adr, k=10) +
-                                s(flaeche_qm_sv, k=10, bs = "cr") +
-                                s(wohnflaeche_je_ew_adr_log, k=10, bs = "cr") +
-                                s(anteil_vf_sv, k=10, bs = "cr") +
-                                s(anteil_gf_sv, k=10, bs = "cr") #+
-                              #  s(anteil_ve_sv, k=10, bs = "cr") #+
-                               # s(anteil_beb_sv , k=10)
+                        s(erreichbarkeit_gr10ha_in_metern_adr, k=10, bs = "cr") +
+                        s(erreichbarkeit_innenstadt_in_minuten_adr, k=10, bs = "cr") +
+                        s(erreichbarkeit_naechstehaltestelle_in_minuten_adr, k=10, bs = "cr") +
+                        s(wohnbere_1_log, k=10, bs = "cr") +
+                    #   s(erreichbarkeit_u10ha_in_metern_adr, k=10) +
+                        s(flaeche_qm_sv, k=10, bs = "cr") +
+                        s(wohnflaeche_je_ew_adr_log, k=10, bs = "cr") +
+                        s(grundschul_num, k= 10, bs = "cr")+
+                        s(kitakigaho_num, k =10, bs = "cr") +
+                        s(ortszentru_num, k =10, bs = "cr") +
+                        s(spielplatz_num, k =10, bs = "cr")+
+                        s(anteil_vf_sv, k=10, bs = "cr") +
+                        s(anteil_gf_sv, k=10, bs = "cr") #+
+                     #  s(anteil_ve_sv, k=10, bs = "cr") #+
+                      # s(anteil_beb_sv , k=10)
                       , 
                       ~ #zentraler_bereich +
-                              s(erreichbarkeit_gr10ha_in_metern_adr, k=10, bs = "cr") +
-                                s(erreichbarkeit_innenstadt_in_minuten_adr, k=10, bs = "cr") +
-                                s(erreichbarkeit_naechstehaltestelle_in_minuten_adr, k=10, bs = "cr") +
-                             #   s(erreichbarkeit_u10ha_in_metern_adr, k=10) +
-                                s(flaeche_qm_sv, k=10, bs = "cr") +
-                                s(wohnflaeche_je_ew_adr_log, k=10, bs = "cr") +
-                                s(anteil_vf_sv, k=10, bs = "cr") +
-                                s(anteil_gf_sv, k=10, bs = "cr")# +
-                              #  s(anteil_ve_sv, k=10, bs = "cr")# +
-                               # s(anteil_beb_sv , k=10)
+                        s(erreichbarkeit_gr10ha_in_metern_adr, k=10, bs = "cr") +
+                        s(erreichbarkeit_innenstadt_in_minuten_adr, k=10, bs = "cr") +
+                        s(erreichbarkeit_naechstehaltestelle_in_minuten_adr, k=10, bs = "cr") +
+                        s(wohnbere_1_log, k=10, bs = "cr") +
+                    #   s(erreichbarkeit_u10ha_in_metern_adr, k=10) +
+                        s(flaeche_qm_sv, k=10, bs = "cr") +
+                        s(wohnflaeche_je_ew_adr_log, k=10, bs = "cr") +
+                      s(grundschul_num, k= 10, bs = "cr")+
+                      s(kitakigaho_num, k =10, bs = "cr") +
+                      s(ortszentru_num, k =10, bs = "cr") +
+                      s(spielplatz_num, k =10, bs = "cr")+
+                        s(anteil_vf_sv, k=10, bs = "cr") +
+                        s(anteil_gf_sv, k=10, bs = "cr")# +
+                      #  s(anteil_ve_sv, k=10, bs = "cr")# +
+                      # s(anteil_beb_sv , k=10)
                       )
 
-gam_model_ausserhalb <- gam(
-  formula = formula_list1,
+formula_list1b <- list(wohnlage_ebene ~ 
+                        #zentraler_bereich +
+                        s(erreichbarkeit_gr10ha_in_metern_adr, k=6, bs = "cr") +
+                        s(erreichbarkeit_innenstadt_in_minuten_adr, k=6, bs = "cr") +
+                        s(erreichbarkeit_naechstehaltestelle_in_minuten_adr, k=6, bs = "cr") +
+                        s(wohnbere_1_log, k=6, bs = "cr") +
+                        #   s(erreichbarkeit_u10ha_in_metern_adr, k=6) +
+                        s(flaeche_qm_sv, k=6, bs = "cr") +
+                        s(wohnflaeche_je_ew_adr_log, k=6, bs = "cr") +
+                        s(grundschul_num, k=6, bs = "cr") +
+                        s(kitakigaho_num, k=6, bs = "cr") +
+                        s(ortszentru_num, k=6, bs = "cr") +
+                        s(spielplatz_num, k=6, bs = "cr") +
+                        s(anteil_vf_sv, k=6, bs = "cr") +
+                        s(anteil_gf_sv, k=6, bs = "cr") #+
+                      #  s(anteil_ve_sv, k=6, bs = "cr") #+
+                      # s(anteil_beb_sv , k=6)
+                      , 
+                      ~ #zentraler_bereich +
+                        s(erreichbarkeit_gr10ha_in_metern_adr, k=6, bs = "cr") +
+                        s(erreichbarkeit_innenstadt_in_minuten_adr, k=6, bs = "cr") +
+                        s(erreichbarkeit_naechstehaltestelle_in_minuten_adr, k=6, bs = "cr") +
+                        s(wohnbere_1_log, k=6, bs = "cr") +
+                        #   s(erreichbarkeit_u10ha_in_metern_adr, k=6) +
+                        s(flaeche_qm_sv, k=6, bs = "cr") +
+                        s(wohnflaeche_je_ew_adr_log, k=6, bs = "cr") +
+                        s(grundschul_num, k=6, bs = "cr") +
+                        s(kitakigaho_num, k=6, bs = "cr") +
+                        s(ortszentru_num, k=6, bs = "cr") +
+                        s(spielplatz_num, k=6, bs = "cr") +
+                        s(anteil_vf_sv, k=6, bs = "cr") +
+                        s(anteil_gf_sv, k=6, bs = "cr")# +
+                      #  s(anteil_ve_sv, k=6, bs = "cr")# +
+                      # s(anteil_beb_sv , k=6)
+)
+
+gam_model_ausserhalb_a <- gam(
+  formula = formula_list1a,
   data = model_data_complete_ausserhalb,
   family = mgcv::multinom(K = 2), # weil 3 Kategorien
   method = "REML", 
@@ -88,7 +134,19 @@ gam_model_ausserhalb <- gam(
 )
 
 # Modell speichern
-saveRDS(gam_model_ausserhalb, file = "modelle/gam_model_ausserhalb.rds")
+saveRDS(gam_model_ausserhalb_a, file = "modelle/gam_model_ausserhalb_a.rds")
+
+gam_model_ausserhalb_b <- gam(
+  formula = formula_list1a,
+  data = model_data_complete_ausserhalb,
+  family = mgcv::multinom(K = 2), # weil 3 Kategorien
+  method = "REML", 
+  optimizer = "efs",
+  control = gam.control(trace = TRUE, keepData = FALSE), # reduziert Größe 
+)
+
+# Modell speichern
+saveRDS(gam_model_ausserhalb_b, file = "modelle/gam_model_ausserhalb_b.rds")
 
 
 formula_list2 <- list(
@@ -96,16 +154,26 @@ formula_list2 <- list(
     s(erreichbarkeit_gr10ha_in_metern_adr, k=5, bs="cr") +
     s(erreichbarkeit_innenstadt_in_minuten_adr, k=5, bs="cr") +
     s(erreichbarkeit_naechstehaltestelle_in_minuten_adr, k=5, bs="cr") +
+    s(wohnbere_1_log, k=5, bs = "cr") +
     s(flaeche_qm_sv, k=5, bs="cr") +
     s(wohnflaeche_je_ew_adr_log, k=5, bs="cr") +
+    s(grundschul_num, k=5, bs = "cr") +
+    s(kitakigaho_num, k=5, bs = "cr") +
+    s(ortszentru_num, k=5, bs = "cr") +
+    s(spielplatz_num, k=5, bs = "cr") +
     s(anteil_vf_sv, k=5, bs="cr") +
     s(anteil_gf_sv, k=5, bs="cr"),
   ~ 
     s(erreichbarkeit_gr10ha_in_metern_adr, k=5, bs="cr") +
     s(erreichbarkeit_innenstadt_in_minuten_adr, k=5, bs="cr") +
     s(erreichbarkeit_naechstehaltestelle_in_minuten_adr, k=5, bs="cr") +
+    s(wohnbere_1_log, k=5, bs = "cr") +
     s(flaeche_qm_sv, k=5, bs="cr") +
     s(wohnflaeche_je_ew_adr_log, k=5, bs="cr") +
+    s(grundschul_num, k=5, bs = "cr") +
+    s(kitakigaho_num, k=5, bs = "cr") +
+    s(ortszentru_num, k=5, bs = "cr") +
+    s(spielplatz_num, k=5, bs = "cr") +
     s(anteil_vf_sv, k=5, bs="cr") +
     s(anteil_gf_sv, k=5, bs="cr")
 )
