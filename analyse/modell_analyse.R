@@ -1,6 +1,7 @@
 library(here)
 source(here("analyse", "model_evaluation.R"))
 source(here("analyse", "plot_funktionen.R"))
+source(here("daten_verarbeitung", "daten_bearbeitung.R"))
 library(yardstick)
 library(dplyr)
 library(caret)
@@ -54,5 +55,5 @@ evaluate_confusion_matrix_equal_priors(model_gam_ausserhalb_b,
 # wenn alle anderen konstant gehalten werden?
 # y-Achse: log odds gegenüber referenzkategorie (durchschnittliche Lage)
 visualize_part_effects(model_gam_zentral, "part_eff", subfolder_name = "part_effects_zent")
-visualize_part_effects(model_gam_ausserhalb, "part_eff", subfolder_name = "part_effects_aus_a")
-visualize_part_effects(model_gam_ausserhalb, "part_eff", subfolder_name = "part_effects_aus_b")
+visualize_part_effects(model_gam_ausserhalb_a, "part_eff", subfolder_name = "part_effects_aus_a")
+visualize_part_effects(model_gam_ausserhalb_b, "part_eff", subfolder_name = "part_effects_aus_b")

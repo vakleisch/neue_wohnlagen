@@ -6,7 +6,7 @@
 # Ouput: Character Vektor mit der wahrscheinlichsten Kategorie pro Beobachtung 
 predict_labels_discr <- function(model,
                                  test_data,
-                                 y_col = "Wohnlage_numerisch",
+                                 y_col = "wohnlage_ebene",
                                  number_categories = 3) {
   # Matrix mit P(y=k|x)
   probs <- predict(model, newdata = test_data, type = "response")
@@ -43,7 +43,7 @@ predict_labels_discr <- function(model,
 predict_labels_equal_priors <- function(model,
                                         test_data,
                                         number_categories = 3,
-                                        y_col = "Wohnlage_numerisch") {
+                                        y_col = "wohnlage_ebene") {
   # Matrix mit P(y = k | x) vom Modell
   probs <- predict(model, newdata = test_data, type = "response")
   
@@ -112,7 +112,7 @@ evaluate_multinom_accuracy <- function(model,
 # Ouput: Konfusionsmatrix sowie viele weitere Größen
 evaluate_confusion_matrix <- function(model,
                                       test_data ,
-                                      y_col = "Wohnlage_numerisch",
+                                      y_col = "wohnlage_ebene",
                                       number_categories = 3) {
   probs <- predict(model, newdata = test_data, type = "response")
   colnames(probs) <- as.character(0:(number_categories - 1))
@@ -129,7 +129,7 @@ evaluate_confusion_matrix <- function(model,
 # Input: Modell und Daten
 # Ouput: Konfusionsmatrix sowie viele weitere Größen
 # Hinweis: Korrigiert beim Vorhersagen, die Klassen Imbalance
-evaluate_confusion_matrix_equal_priors <- function(model, test_data, y_col = "Wohnlage_numerisch", number_categories = 3) {
+evaluate_confusion_matrix_equal_priors <- function(model, test_data, y_col = "wohnlage_ebene", number_categories = 3) {
   # Modellvorhersage (P(y=k | x))
   probs <- predict(model, newdata = test_data, type = "response")
   
@@ -161,7 +161,7 @@ evaluate_confusion_matrix_equal_priors <- function(model, test_data, y_col = "Wo
 # Ouput: Data frame mit Daten der falsch vorhergesagten Wohnobjekte
 missclassification_data <- function(model,
                                     data,
-                                    y_col = "Wohnlage_numerisch",
+                                    y_col = "wohnlage_ebene",
                                     number_categories = 3,
                                     predict_fun = predict_labels_discr) {
   predicted_classes <- predict_fun(model = model, test_data = data,
@@ -210,7 +210,7 @@ missclassification_data <- function(model,
 # Speziell für zentrale Wohnlagen
 missclassification_data_zentral <- function(model,
                                             data = model_data_zentral_complete,
-                                            y_col = "Wohnlage_numerisch",
+                                            y_col = "wohnlage_ebene",
                                             number_categories = 3,
                                             predict_fun = predict_labels_discr) {
   predicted_classes <- predict_fun(model = model, test_data = data,
@@ -254,7 +254,7 @@ missclassification_data_zentral <- function(model,
 # Hinweis: Speziell für Wohnlagen außerhalb
 missclassification_data_ausserhalb <- function(model,
                                                data = model_data_ausserhalb_complete,
-                                               y_col = "Wohnlage_numerisch",
+                                               y_col = "wohnlage_ebene",
                                                number_categories = 3, 
                                                predict_fun = predict_labels_discr) {
   predicted_classes <- predict_fun(model = model, test_data = data,
@@ -274,18 +274,18 @@ missclassification_data_ausserhalb <- function(model,
   fehlerhafte_klassifikationen <- fehlerhafte_klassifikationen %>%
     mutate(
       Wohnlage_wahr = case_when(
-        Wohnlage_wahr == 0 ~ "durchschnittliche Lage (außerhalb)",
-        Wohnlage_wahr == 1 ~ "gute Lage (außerhalb)",
-        Wohnlage_wahr == 2 ~ "beste Lage (außerhalb)"
+        Wohnlage_wahr == 0 ~ "durchschnittliche Lage",
+        Wohnlage_wahr == 1 ~ "gute Lage",
+        Wohnlage_wahr == 2 ~ "beste Lage"
       ),
       Wohnlage_vorhersage = case_when(
-        Wohnlage_vorhersage == 0 ~ "durchschnittliche Lage (außerhalb)",
-        Wohnlage_vorhersage == 1 ~ "gute Lage (außerhalb)",
-        Wohnlage_vorhersage == 2 ~ "beste Lage (außerhalb)"
+        Wohnlage_vorhersage == 0 ~ "durchschnittliche Lage",
+        Wohnlage_vorhersage == 1 ~ "gute Lage",
+        Wohnlage_vorhersage == 2 ~ "beste Lage"
       ),
       # Optional: gleich als faktor mit gewünschter Reihenfolge speichern
-      Wohnlage_wahr = factor(Wohnlage_wahr, levels = c("durchschnittliche Lage (außerhalb)", "gute Lage (außerhalb)", "beste Lage (außerhalb)")),
-      Wohnlage_vorhersage = factor(Wohnlage_vorhersage, levels = c("durchschnittliche Lage (außerhalb)", "gute Lage (außerhalb)", "beste Lage (außerhalb)"))
+      Wohnlage_wahr = factor(Wohnlage_wahr, levels = c("durchschnittliche Lage", "gute Lage", "beste Lage")),
+      Wohnlage_vorhersage = factor(Wohnlage_vorhersage, levels = c("durchschnittliche Lage", "gute Lage", "beste Lage"))
     )
 }
 
@@ -296,7 +296,7 @@ missclassification_data_ausserhalb <- function(model,
 # Hinweis: Speziell für zentrale Wohnlagen
 korrekte_vorhersagen_zentral <- function(model,
                                          data = model_data_zentral_complete,
-                                         y_col = "Wohnlage_numerisch",
+                                         y_col = "wohnlage_ebene",
                                          number_categories = 3,
                                          predict_fun = predict_labels_discr) {
   predicted_classes <- predict_fun(model = model, test_data = data,
@@ -341,7 +341,7 @@ korrekte_vorhersagen_zentral <- function(model,
 # Hinweis: Speziell für Wohnlagen ausserhalb
 korrekte_vorhersagen_ausserhalb <- function(model,
                                             data = model_data_ausserhalb_complete,
-                                            y_col = "Wohnlage_numerisch",
+                                            y_col = "wohnlage_ebene",
                                             number_categories = 3,
                                             predict_fun = predict_labels_discr) {
   predicted_classes <- predict_fun(model = model, test_data = data,
@@ -364,17 +364,17 @@ korrekte_vorhersagen_ausserhalb <- function(model,
   korrekte_klassifikationen <- korrekte_klassifikationen %>%
     mutate(
       Wohnlage_wahr = case_when(
-        Wohnlage_wahr == 0 ~ "durchschnittliche Lage (außerhalb)",
-        Wohnlage_wahr == 1 ~ "gute Lage (außerhalb)",
-        Wohnlage_wahr == 2 ~ "beste Lage (außerhalb)"
+        Wohnlage_wahr == 0 ~ "durchschnittliche Lage",
+        Wohnlage_wahr == 1 ~ "gute Lage",
+        Wohnlage_wahr == 2 ~ "beste Lage"
       ),
       Wohnlage_vorhersage = case_when(
-        Wohnlage_vorhersage == 0 ~ "durchschnittliche Lage (außerhalb)",
-        Wohnlage_vorhersage == 1 ~ "gute Lage (außerhalb)",
-        Wohnlage_vorhersage == 2 ~ "beste Lage (außerhalb)"
+        Wohnlage_vorhersage == 0 ~ "durchschnittliche Lage",
+        Wohnlage_vorhersage == 1 ~ "gute Lage",
+        Wohnlage_vorhersage == 2 ~ "beste Lage"
       ),
-      Wohnlage_wahr = factor(Wohnlage_wahr, levels = c("durchschnittliche Lage (außerhalb)", "gute Lage (außerhalb)", "beste Lage (außerhalb)")),
-      Wohnlage_vorhersage = factor(Wohnlage_vorhersage, levels = c("durchschnittliche Lage (außerhalb)", "gute Lage (außerhalb)", "beste Lage (außerhalb)"))
+      Wohnlage_wahr = factor(Wohnlage_wahr, levels = c("durchschnittliche Lage", "gute Lage", "beste Lage")),
+      Wohnlage_vorhersage = factor(Wohnlage_vorhersage, levels = c("durchschnittliche Lage", "gute Lage", "beste Lage"))
     )
   
   return(korrekte_klassifikationen)
@@ -383,7 +383,7 @@ korrekte_vorhersagen_ausserhalb <- function(model,
 
 korrekte_vorhersagen <- function(model,
                                             data = model_data_ausserhalb_complete,
-                                            y_col = "Wohnlage_numerisch",
+                                            y_col = "wohnlage_ebene",
                                             number_categories = 3,
                                             predict_fun = predict_labels_discr) {
   predicted_classes <- predict_fun(model = model, test_data = data,
