@@ -3,6 +3,21 @@ library(dplyr)
 source(here("daten_verarbeitung", "daten_einlesen.R"))
 
 
+mapping <- data.frame(
+  EBENE = 1:6,
+  Wohnlage = c(
+    "durchschnittliche Lage",
+    "gute Lage",
+    "beste Lage",
+    "zentrale durchschnittliche Lage",
+    "zentrale gute Lage",
+    "zentrale beste Lage"
+  )
+)
+
+wohnlagen_muc2 <- wohnlagen_muc %>%
+  left_join(mapping, by = "EBENE")
+
 # Daten betrachten
 
 summary(raeumliche_daten)
@@ -91,22 +106,12 @@ data <- data %>%
 
 # Modelldatensatz
 model_data <- data %>% 
-  select(gemarkung_,
-         layer,
-         zentraler_bereich,
-         ewo_adr_log,
-         we_adr_log,
-         anteil_gebauede_1bis2_we_adr,
-         anteil_we_gebaeude_4bis9_geschosse_adr_log,
-         geschossflaeche_laeden_gastro_adr_log,
-         erreichbarkeit_gr10ha_in_metern_adr, # (!) haben beide die gleiche 
-         erreichbarkeit_u10ha_in_metern_adr,   # Eigenschaften 
+  select(#gemarkung_,
+        # ewo_adr_log,
+        # we_adr_log,
+         erreichbarkeit_gr10ha_in_metern_adr,
          erreichbarkeit_innenstadt_in_minuten_adr,
          erreichbarkeit_naechstehaltestelle_in_minuten_adr,
-         wohnflaeche_je_ew_adr_log,
-       #  wohnberech, #  = wohnbere_1 + wohnbere_2 (!)
-         wohnbere_1_log, #
-         wohnbere_2_log, #
          grundschul_num,
          spielplatz_num,
          kitakigaho_num,
@@ -114,17 +119,9 @@ model_data <- data %>%
          wohnlage_ebene,
          wohnlage_bedeutung,
          brw_log,
-         kaufkraft_pro_kopf_blosei,
-         kaufkraft_pro_kopf_blo,
-         flaeche_qm_sv,
-        # sum_flaeche_vf_sv, # evt hinzufügen
          anteil_vf_sv,
-        # sum_gf_sv_log,
          anteil_gf_sv,
-        # sum_ve_sv,
-         anteil_ve_sv,
-        # sum_beb_sv,
-         anteil_beb_sv,
+        # anteil_beb_sv,
          geom)
 model_data_complete <- na.omit(model_data) # Zeilen mit NA entfernen
 
