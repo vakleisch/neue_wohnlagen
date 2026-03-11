@@ -281,15 +281,17 @@ interaktive_karte_model_werte <- leaflet() %>%
     radius = 4,
     label = ~Wohnlage_vorhersage,
     popup = ~paste0(
-      "<b>Distanz Bahnhof:</b> ", distanz_bahnhof, "<br>",
-      "<b>Distanz U-Bahn:</b> ", distanz_ubahn, "<br>",
-      "<b>Distanz Bus:</b> ", distanz_bushaltestelle, "<br>",
-      "<b>Distanz Unterzentrum:</b> ", distanz_unterzentrum, "<br>",
-      "<b>Distanz Mittelzentrum:</b> ", distanz_mittelzentrum, "<br>",
-      "<b>Nahversorgungsindex:</b> ", nahversorgungs_index, "<br>",
-      "<b>Hauspreisindex:</b> ", hauspreis_index, "<br>", 
-      "<b> ÖPNV-Index:</b> ", opnv_index, "<br>",
-      "<b>Straßentyp:</b> ", straßentyp_gruppe, "<br>"
+      "<b>Distanz Grünfläche (<10ha):</b> ", erreichbarkeit_gr10ha_in_metern_adr, "<br>",
+      "<b>Fahrtzeit Innenstadt (ÖPNV):</b> ", erreichbarkeit_innenstadt_in_minuten_adr, "<br>",
+      "<b>Erreichbarkeit nächste Haltestelle:</b> ", erreichbarkeit_naechstehaltestelle_in_minuten_adr, "<br>",
+      "<b>Fußweg (m) Grundschule:</b> ", grundschul_num, "<br>",
+      "<b>Fußweg (m) Spielplatz:</b> ", spielplatz_num, "<br>",
+      "<b>Fußweg (m) Kita:</b> ", kitakigaho_num, "<br>",
+      "<b>Fußweg (m) Ortszentrum:</b> ", ortszentru_num, "<br>", 
+      "<b>log(Bodenrichtwert):</b> ", brw_log, "<br>",
+      "<b>Bodenrichtwert:</b> ", brw, "<br>",
+      "<b>Anteil Verkehrsfläche im Viertel:</b> ", anteil_vf_sv, "<br>",
+      "<b>Anteil Grünfläche im Viertel:</b> ", anteil_gf_sv, "<br>"   
     ),
     group = "Fehler"
   ) %>%
@@ -303,15 +305,17 @@ interaktive_karte_model_werte <- leaflet() %>%
     radius = 4,
     label = ~wohnlage_bedeutung,
     popup = ~paste0(
-      "<b>Distanz Bahnhof:</b> ", distanz_bahnhof, "<br>",
-      "<b>Distanz U-Bahn:</b> ", distanz_ubahn, "<br>",
-      "<b>Distanz Bus:</b> ", distanz_bushaltestelle, "<br>",
-      "<b>Distanz Unterzentrum:</b> ", distanz_unterzentrum, "<br>",
-      "<b>Distanz Mittelzentrum:</b> ", distanz_mittelzentrum, "<br>",
-      "<b>Nahversorgungsindex:</b> ", nahversorgungs_index, "<br>",
-      "<b>Hauspreisindex:</b> ", hauspreis_index, "<br>", 
-      "<b> ÖPNV-Index:</b> ", opnv_index, "<br>",
-      "<b>Straßentyp:</b> ", straßentyp_gruppe, "<br>"
+      "<b>Distanz Grünfläche (<10ha):</b> ", erreichbarkeit_gr10ha_in_metern_adr, "<br>",
+      "<b>Fahrtzeit Innenstadt (ÖPNV):</b> ", erreichbarkeit_innenstadt_in_minuten_adr, "<br>",
+      "<b>Erreichbarkeit nächste Haltestelle:</b> ", erreichbarkeit_naechstehaltestelle_in_minuten_adr, "<br>",
+      "<b>Fußweg (m) Grundschule:</b> ", grundschul_num, "<br>",
+      "<b>Fußweg (m) Spielplatz:</b> ", spielplatz_num, "<br>",
+      "<b>Fußweg (m) Kita:</b> ", kitakigaho_num, "<br>",
+      "<b>Fußweg (m) Ortszentrum:</b> ", ortszentru_num, "<br>", 
+      "<b>log(Bodenrichtwert):</b> ", brw_log, "<br>",
+      "<b>Bodenrichtwert:</b> ", brw, "<br>",
+      "<b>Anteil Verkehrsfläche im Viertel:</b> ", anteil_vf_sv, "<br>",
+      "<b>Anteil Grünfläche im Viertel:</b> ", anteil_gf_sv, "<br>" 
     ),
     group = "Korrekt"
   ) %>%

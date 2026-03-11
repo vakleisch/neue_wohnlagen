@@ -118,6 +118,7 @@ model_data <- data %>%
          ortszentru_num,
          wohnlage_ebene,
          wohnlage_bedeutung,
+         brw,
          brw_log,
          anteil_vf_sv,
          anteil_gf_sv,
