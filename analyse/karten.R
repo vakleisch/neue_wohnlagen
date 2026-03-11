@@ -281,17 +281,17 @@ interaktive_karte_model_werte <- leaflet() %>%
     radius = 4,
     label = ~Wohnlage_vorhersage,
     popup = ~paste0(
-      "<b>Distanz Grünfläche (<10ha):</b> ", erreichbarkeit_gr10ha_in_metern_adr, "<br>",
+      "<b>Distanz Grünfläche (>10ha):</b> ", erreichbarkeit_gr10ha_in_metern_adr, "<br>",
       "<b>Fahrtzeit Innenstadt (ÖPNV):</b> ", erreichbarkeit_innenstadt_in_minuten_adr, "<br>",
-      "<b>Erreichbarkeit nächste Haltestelle:</b> ", erreichbarkeit_naechstehaltestelle_in_minuten_adr, "<br>",
+      "<b>Erreichbarkeit nächste Haltestelle (min):</b> ", erreichbarkeit_naechstehaltestelle_in_minuten_adr, "<br>",
       "<b>Fußweg (m) Grundschule:</b> ", grundschul_num, "<br>",
       "<b>Fußweg (m) Spielplatz:</b> ", spielplatz_num, "<br>",
       "<b>Fußweg (m) Kita:</b> ", kitakigaho_num, "<br>",
       "<b>Fußweg (m) Ortszentrum:</b> ", ortszentru_num, "<br>", 
-      "<b>log(Bodenrichtwert):</b> ", brw_log, "<br>",
+      "<b>log(Bodenrichtwert):</b> ", round(brw_log,2), "<br>",
       "<b>Bodenrichtwert:</b> ", brw, "<br>",
-      "<b>Anteil Verkehrsfläche im Viertel:</b> ", anteil_vf_sv, "<br>",
-      "<b>Anteil Grünfläche im Viertel:</b> ", anteil_gf_sv, "<br>"   
+      "<b>Anteil Verkehrsfläche im Viertel (%):</b> ", round(anteil_vf_sv,2), "<br>",
+      "<b>Anteil Grünfläche im Viertel (%):</b> ", round(anteil_gf_sv, 2), "<br>"   
     ),
     group = "Fehler"
   ) %>%
@@ -305,17 +305,17 @@ interaktive_karte_model_werte <- leaflet() %>%
     radius = 4,
     label = ~wohnlage_bedeutung,
     popup = ~paste0(
-      "<b>Distanz Grünfläche (<10ha):</b> ", erreichbarkeit_gr10ha_in_metern_adr, "<br>",
+      "<b>Distanz Grünfläche (>10ha):</b> ", erreichbarkeit_gr10ha_in_metern_adr, "<br>",
       "<b>Fahrtzeit Innenstadt (ÖPNV):</b> ", erreichbarkeit_innenstadt_in_minuten_adr, "<br>",
-      "<b>Erreichbarkeit nächste Haltestelle:</b> ", erreichbarkeit_naechstehaltestelle_in_minuten_adr, "<br>",
+      "<b>Erreichbarkeit nächste Haltestelle (min):</b> ", erreichbarkeit_naechstehaltestelle_in_minuten_adr, "<br>",
       "<b>Fußweg (m) Grundschule:</b> ", grundschul_num, "<br>",
       "<b>Fußweg (m) Spielplatz:</b> ", spielplatz_num, "<br>",
       "<b>Fußweg (m) Kita:</b> ", kitakigaho_num, "<br>",
       "<b>Fußweg (m) Ortszentrum:</b> ", ortszentru_num, "<br>", 
-      "<b>log(Bodenrichtwert):</b> ", brw_log, "<br>",
+      "<b>log(Bodenrichtwert):</b> ", round(brw_log,2), "<br>",
       "<b>Bodenrichtwert:</b> ", brw, "<br>",
-      "<b>Anteil Verkehrsfläche im Viertel:</b> ", anteil_vf_sv, "<br>",
-      "<b>Anteil Grünfläche im Viertel:</b> ", anteil_gf_sv, "<br>" 
+      "<b>Anteil Verkehrsfläche im Viertel (%):</b> ", round(anteil_vf_sv,2), "<br>",
+      "<b>Anteil Grünfläche im Viertel (%):</b> ", round(anteil_gf_sv, 2), "<br>" 
     ),
     group = "Korrekt"
   ) %>%
