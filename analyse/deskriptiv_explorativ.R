@@ -140,3 +140,16 @@ karte_punkte <- ggplot(data = model_data_complete) +
   )
 
 karte_punkte
+
+
+
+
+
+
+
+
+
+
+
+
+

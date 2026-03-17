@@ -334,7 +334,7 @@ interaktive_karte_model_werte <- leaflet() %>%
 interaktive_karte_model_werte
 
 saveWidget(interaktive_karte_model_werte, file = "interaktive_karten/interaktive_karte_model_werte.html", selfcontained = TRUE)
-browseURL("interaktive_karten/interaktive_karte_model_werte.html")
+#browseURL("interaktive_karten/interaktive_karte_model_werte.html")
 
 
 
