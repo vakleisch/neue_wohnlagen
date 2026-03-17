@@ -52,3 +52,40 @@ evaluate_confusion_matrix_equal_priors(model_gam_ausserhalb_b,
 # y-Achse: log odds gegenüber referenzkategorie (durchschnittliche Lage)
 visualize_part_effects(model_gam_zentral, "part_eff", subfolder_name = "part_effects_zent")
 visualize_part_effects(model_gam_ausserhalb_b, "part_eff", subfolder_name = "part_effects_aus_b")
+
+
+
+
+
+
+
+
+
+
+# Sind predict_labels und predict_labels_discr identisch? 
+
+# 1. Beide Vorhersagen generieren lassen
+vorhersage_normal <- predict_labels(model = model_gam_zentral, 
+                                    test_data = model_data_complete_zentral)
+
+vorhersage_korrigiert <- predict_labels_discr(model = model_gam_zentral, 
+                                              test_data = model_data_complete_zentral)
+
+# ==========================================
+# 2. SCHNELLER CHECK: Sind sie identisch?
+# ==========================================
+sind_gleich <- identical(vorhersage_normal, vorhersage_korrigiert)
+cat("Sind die Vorhersagen zu 100% identisch? ->", sind_gleich, "\n")
+
+# Wie viele Beobachtungen unterscheiden sich?
+anzahl_unterschiede <- sum(vorhersage_normal != vorhersage_korrigiert)
+cat("Anzahl der unterschiedlichen Vorhersagen: ", anzahl_unterschiede, 
+    " von ", length(vorhersage_normal), " Punkten.\n\n")
+
+# ==========================================
+# 3. DETAIL-CHECK: Kreuztabelle (Confusion Matrix der Methoden)
+# ==========================================
+cat("=== KREUZTABELLE DER VORHERSAGEN ===\n")
+vergleichs_tabelle <- table(Normal = vorhersage_normal, 
+                            Korrigiert = vorhersage_korrigiert)
+print(vergleichs_tabelle)

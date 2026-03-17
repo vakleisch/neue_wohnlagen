@@ -335,3 +335,109 @@ interaktive_karte_model_werte
 
 saveWidget(interaktive_karte_model_werte, file = "interaktive_karten/interaktive_karte_model_werte.html", selfcontained = TRUE)
 browseURL("interaktive_karten/interaktive_karte_model_werte.html")
+
+
+
+# VALIDIERUNG
+
+# Räumliche Verschneidung (Spatial Join)
+# Wir ziehen uns einfach die EBENE aus dem Flächen-Polygon
+punkte_validierung <- st_join(punkte_sf, wohnlagen_muc, join = st_intersects)
+
+# Kontrolle und Abgleich
+punkte_validierung <- punkte_validierung %>%
+  mutate(
+    # Wir übersetzen die Zahlen direkt in deine Kategorien
+    Erwartete_Wohnlage_Raum = case_when(
+      EBENE == 1 ~ "durchschnittliche Lage",
+      EBENE == 2 ~ "gute Lage",
+      EBENE == 3 ~ "beste Lage",
+      EBENE == 4 ~ "zentrale durchschnittliche Lage",
+      EBENE == 5 ~ "zentrale gute Lage",
+      EBENE == 6 ~ "zentrale beste Lage",
+      TRUE ~ NA_character_ # Falls ein Punkt ins Leere fällt (z.B. außerhalb Münchens)
+    ),
+    
+    # Abgleich: Stimmt unsere übersetzte Geodaten-Lage mit deinen echten Labels überein?
+    Lage_stimmt_ueberein = as.character(Wohnlage_wahr) == Erwartete_Wohnlage_Raum
+  )
+
+# Auswertung anzeigen
+cat("\n=== ERGEBNIS DER VALIDIERUNG ===\n")
+print(table(Korrekt_Platziert = punkte_validierung$Lage_stimmt_ueberein, useNA = "always"))
+
+# Abweichler extrahieren, falls es welche gibt
+punkte_fehlerhaft_platziert <- punkte_validierung %>% 
+  filter(Lage_stimmt_ueberein == FALSE | is.na(Lage_stimmt_ueberein)) %>%
+  select(Wohnlage_wahr, Erwartete_Wohnlage_Raum, EBENE)
+
+cat("\nAnzahl der Fehler: ", nrow(punkte_fehlerhaft_platziert), "\n")
+
+
+
+
+
+library(leaflet)
+library(sf)
+library(dplyr)
+
+# 1. Daten in die zwei Fehler-Gruppen aufteilen und für Leaflet transformieren (WGS84)
+punkte_echte_fehler_wgs <- punkte_fehlerhaft_platziert %>%
+  filter(!is.na(Erwartete_Wohnlage_Raum)) %>%
+  st_transform(4326)
+
+punkte_na_faelle_wgs <- punkte_fehlerhaft_platziert %>%
+  filter(is.na(Erwartete_Wohnlage_Raum)) %>%
+  st_transform(4326)
+
+# 2. Die interaktive Karte mit Ebenen-Steuerung (Layer Control) erstellen
+karte_validierung_gefiltert <- leaflet() %>%
+  addProviderTiles("CartoDB.Positron") %>%
+  
+  # Hintergrund: Die Wohnlagen-Flächen zur Orientierung
+  addPolygons(
+    data = wohnlagen_muc_wgs,
+    fillColor = ~color,
+    fillOpacity = 0.4, 
+    color = "black",
+    weight = 0.5,
+    group = "Wohnlagen (Hintergrund)"
+  ) %>%
+  
+  # Gruppe 1: Die "echten" Fehler (Falsch klassifiziert im Polygon) -> ROTE PUNKTE
+  addCircleMarkers(
+    data = punkte_echte_fehler_wgs,
+    color = "blue", fillColor = "blue", fillOpacity = 0.8, radius = 6, weight = 2,
+    popup = ~paste0(
+      "<b>Art:</b> Abweichende Wohnlage<br>",
+      "<b>Wahre Wohnlage Datensatz:</b> ", Wohnlage_wahr, "<br>",
+      "<b>Wohnlage basierend auf Flächen:</b> ", Erwartete_Wohnlage_Raum, "<br>"
+    ),
+    group = "Abweichende Wohnlagen"
+  ) %>%
+  
+  # Gruppe 2: Die NA-Fälle (Punkt fällt ins Leere) -> GELBE PUNKTE
+  addCircleMarkers(
+    data = punkte_na_faelle_wgs,
+    color = "black", fillColor = "yellow", fillOpacity = 0.8, radius = 6, weight = 1,
+    popup = ~paste0(
+      "<b>Art:</b> Wohnlage aus Fläche unermittelbar<br>",
+      "<b>Wahre Wohnlage Datensatz:</b> ", Wohnlage_wahr, "<br>",
+      "<b>Problem:</b> Punkt liegt in keinem Wohnlagen-Polygon."
+    ),
+    group = "Fehlende Fläche"
+  ) %>%
+  
+  # 3. DAS KÄSTCHEN OBEN RECHTS (Layers Control)
+  addLayersControl(
+    overlayGroups = c(
+      "Fehlende Fläche", "Abweichende Wohnlage"),
+    options = layersControlOptions(collapsed = FALSE) # Kästchen bleibt offen
+  )
+
+# Karte im Viewer anzeigen
+karte_validierung_gefiltert
+
+saveWidget(karte_validierung_gefiltert, 
+           file = "interaktive_karten/karte_validierung_gefiltert.html",
+           selfcontained = TRUE)

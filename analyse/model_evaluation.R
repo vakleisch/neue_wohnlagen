@@ -1,6 +1,27 @@
 # Funktionen zur Evaluierung der Modellgüte
 
 
+# Normale Vorehrsage der Labels ohne Korrektur
+predict_labels <- function(model,
+                                 test_data,
+                                 y_col = "wohnlage_ebene",
+                                 number_categories = 3) {
+  
+  # 1. Normale Matrix mit vorhergesagten Wahrscheinlichkeiten P(y=k|x) holen
+  probs <- predict(model, newdata = test_data, type = "response")
+  
+  # 2. Sicherstellen, dass die Spalten benannt sind (z.B. "0", "1", "2")
+  all_levels <- as.character(0:(number_categories - 1))
+  colnames(probs) <- all_levels  
+  
+  # 3. Vorhergesagte Klassen ermitteln (einfach die Klasse mit dem höchsten Wert)
+  # Wir nutzen hier direkt die 'probs' anstatt der 'adjusted_probs'
+  predicted_classes <- apply(probs, 1, function(x) all_levels[which.max(x)])
+  
+  # 4. Nur die vorhergesagten Klassen als Text-Vektor zurückgeben
+  return(predicted_classes)
+}
+
 # predict_labels_discr
 # Input: Modell und Daten
 # Ouput: Character Vektor mit der wahrscheinlichsten Kategorie pro Beobachtung 
@@ -163,7 +184,7 @@ missclassification_data <- function(model,
                                     data,
                                     y_col = "wohnlage_ebene",
                                     number_categories = 3,
-                                    predict_fun = predict_labels_discr) {
+                                    predict_fun = predict_labels) {
   predicted_classes <- predict_fun(model = model, test_data = data,
                                    number_categories = number_categories, y_col = y_col)
   
@@ -212,7 +233,7 @@ missclassification_data_zentral <- function(model,
                                             data = model_data_zentral_complete,
                                             y_col = "wohnlage_ebene",
                                             number_categories = 3,
-                                            predict_fun = predict_labels_discr) {
+                                            predict_fun = predict_labels) {
   predicted_classes <- predict_fun(model = model, test_data = data,
                                    number_categories = number_categories, y_col = y_col)
   # Sicherstellen, dass Länge passt
@@ -256,7 +277,7 @@ missclassification_data_ausserhalb <- function(model,
                                                data = model_data_ausserhalb_complete,
                                                y_col = "wohnlage_ebene",
                                                number_categories = 3, 
-                                               predict_fun = predict_labels_discr) {
+                                               predict_fun = predict_labels) {
   predicted_classes <- predict_fun(model = model, test_data = data,
                                    number_categories = number_categories, y_col = y_col)
   # Sicherstellen, dass Länge passt
@@ -298,7 +319,7 @@ korrekte_vorhersagen_zentral <- function(model,
                                          data = model_data_zentral_complete,
                                          y_col = "wohnlage_ebene",
                                          number_categories = 3,
-                                         predict_fun = predict_labels_discr) {
+                                         predict_fun = predict_labels) {
   predicted_classes <- predict_fun(model = model, test_data = data,
                                    number_categories = number_categories, y_col = y_col)
   
@@ -343,7 +364,7 @@ korrekte_vorhersagen_ausserhalb <- function(model,
                                             data = model_data_ausserhalb_complete,
                                             y_col = "wohnlage_ebene",
                                             number_categories = 3,
-                                            predict_fun = predict_labels_discr) {
+                                            predict_fun = predict_labels) {
   predicted_classes <- predict_fun(model = model, test_data = data,
                                    number_categories = number_categories, y_col = y_col)
   
@@ -380,12 +401,12 @@ korrekte_vorhersagen_ausserhalb <- function(model,
   return(korrekte_klassifikationen)
 }
 
-
+#####################
 korrekte_vorhersagen <- function(model,
                                             data = model_data_ausserhalb_complete,
                                             y_col = "wohnlage_ebene",
                                             number_categories = 3,
-                                            predict_fun = predict_labels_discr) {
+                                            predict_fun = predict_labels) {
   predicted_classes <- predict_fun(model = model, test_data = data,
                                    number_categories = number_categories, y_col = y_col)
   
