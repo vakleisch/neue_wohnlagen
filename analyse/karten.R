@@ -431,7 +431,7 @@ karte_validierung_gefiltert <- leaflet() %>%
   # 3. DAS KÄSTCHEN OBEN RECHTS (Layers Control)
   addLayersControl(
     overlayGroups = c(
-      "Fehlende Fläche", "Abweichende Wohnlage"),
+      "Fehlende Fläche", "Abweichende Wohnlagen"),
     options = layersControlOptions(collapsed = FALSE) # Kästchen bleibt offen
   )
 
