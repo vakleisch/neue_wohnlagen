@@ -23,9 +23,15 @@ model_gam_zentral <- readRDS("modelle/gam_model_zentral.rds")
 
 model_gam_ausserhalb_b <- readRDS("modelle/gam_model_ausserhalb_b.rds")
 
+model_linear_zentral <- readRDS("modelle/linear_model_zentral.rds")
+
+model_linear_ausserhalb_b <- readRDS("modelle/linear_model_ausserhalb_b.rds")
+
 # Modelloutput ansehen
 summary(model_gam_zentral)
 summary(model_gam_ausserhalb_b)
+summary(model_linear_zentral)
+summary(model_linear_ausserhalb_b)
 
 # Modellgüte evaluieren
 evaluate_confusion_matrix(model_gam_zentral, 
@@ -34,6 +40,15 @@ evaluate_confusion_matrix(model_gam_zentral,
 
                       
 evaluate_confusion_matrix(model_gam_ausserhalb_b, 
+                          test_data = model_data_complete_ausserhalb,
+                          y_col = "wohnlage_ebene")
+
+evaluate_confusion_matrix(model_linear_zentral, 
+                          test_data = model_data_complete_zentral,
+                          y_col = "wohnlage_ebene")
+
+
+evaluate_confusion_matrix(model_linear_ausserhalb_b, 
                           test_data = model_data_complete_ausserhalb,
                           y_col = "wohnlage_ebene")
 
