@@ -15,6 +15,8 @@ source(here("daten_verarbeitung", "daten_bearbeitung.R"))
 # Modelle laden
 model_gam_zentral <- readRDS("modelle/gam_model_zentral.rds")
 model_gam_ausserhalb<- readRDS("modelle/gam_model_ausserhalb_b.rds")
+model_linear_zentral <- readRDS("modelle/linear_model_zentral.rds")
+model_linear_ausserhalb <- readRDS("modelle/linear_model_ausserhalb_b.rds")
 
 wohnlage_farben <- c(
   "durchschnittliche Lage" = "#e8f5a4",
@@ -659,3 +661,258 @@ lapply(names(variablen_liste), function(var_titel) {
   
   cat("Karte gespeichert (Canvas + Labels):", var_spalte, "\n")
 })
+
+
+
+
+
+# LINEARE MODELLE
+
+
+#  Daten erstellen (Fehler und Korrekt)
+fehler_model_linear_zentral <- missclassification_data_zentral(
+  model_linear_zentral, 
+  data = model_data_complete_zentral,
+  predict_fun = predict_labels_discr
+)
+fehler_model_linear_ausserhalb <- missclassification_data_ausserhalb(
+  model_linear_ausserhalb, 
+  data = model_data_complete_ausserhalb,
+  predict_fun = predict_labels_discr
+)
+korrekt_model_linear_zentral <- korrekte_vorhersagen_zentral(
+  model_linear_zentral, 
+  data = model_data_complete_zentral,
+  predict_fun = predict_labels_discr
+)
+korrekt_model_linear_ausserhalb <- korrekte_vorhersagen_ausserhalb(
+  model_linear_ausserhalb, 
+  data = model_data_complete_ausserhalb,
+  predict_fun = predict_labels_discr
+)
+
+#  In sf Objekte umwandeln und nach Lagen filtern
+fehler_model_linear_zentral <- st_as_sf(fehler_model_linear_zentral) %>%
+  filter(wohnlage_bedeutung %in% c("zentrale durchschnittliche Lage", "zentrale gute Lage", "zentrale beste Lage"))
+
+fehler_model_linear_ausserhalb <- st_as_sf(fehler_model_linear_ausserhalb) %>%
+  filter(wohnlage_bedeutung %in% c("durchschnittliche Lage", "gute Lage", "beste Lage"))
+
+korrekt_model_linear_zentral <- st_as_sf(korrekt_model_linear_zentral) %>%
+  filter(wohnlage_bedeutung %in% c("zentrale durchschnittliche Lage", "zentrale gute Lage", "zentrale beste Lage"))
+
+korrekt_model_linear_ausserhalb <- st_as_sf(korrekt_model_linear_ausserhalb) %>%
+  filter(wohnlage_bedeutung %in% c("durchschnittliche Lage", "gute Lage", "beste Lage"))
+
+#  Hilfsfunktion zum Bereinigen (st_zm und st_make_valid) anwenden
+# (Ich gehe davon aus, dass prepare_sf_object in deinem Skript noch definiert ist)
+fehler_model_linear_zentral <- prepare_sf_object(fehler_model_linear_zentral)
+fehler_model_linear_ausserhalb <- prepare_sf_object(fehler_model_linear_ausserhalb)
+korrekt_model_linear_zentral <- prepare_sf_object(korrekt_model_linear_zentral)
+korrekt_model_linear_ausserhalb <- prepare_sf_object(korrekt_model_linear_ausserhalb)
+
+#  Faktoren angleichen, damit es beim rbind keine Probleme gibt
+levels_kombiniert <- c(
+  "durchschnittliche Lage", "gute Lage", "beste Lage",
+  "zentrale durchschnittliche Lage", "zentrale gute Lage", "zentrale beste Lage"
+)
+
+fehler_model_linear_zentral$Wohnlage_vorhersage <- factor(fehler_model_linear_zentral$Wohnlage_vorhersage, levels = levels_kombiniert)
+fehler_model_linear_zentral$Wohnlage_wahr <- factor(fehler_model_linear_zentral$Wohnlage_wahr, levels = levels_kombiniert)
+
+fehler_model_linear_ausserhalb$Wohnlage_vorhersage <- factor(fehler_model_linear_ausserhalb$Wohnlage_vorhersage, levels = levels_kombiniert)
+fehler_model_linear_ausserhalb$Wohnlage_wahr <- factor(fehler_model_linear_ausserhalb$Wohnlage_wahr, levels = levels_kombiniert)
+
+korrekt_model_linear_zentral$Wohnlage_vorhersage <- factor(korrekt_model_linear_zentral$Wohnlage_vorhersage, levels = levels_kombiniert)
+korrekt_model_linear_zentral$Wohnlage_wahr <- factor(korrekt_model_linear_zentral$Wohnlage_wahr, levels = levels_kombiniert)
+
+korrekt_model_linear_ausserhalb$Wohnlage_vorhersage <- factor(korrekt_model_linear_ausserhalb$Wohnlage_vorhersage, levels = levels_kombiniert)
+korrekt_model_linear_ausserhalb$Wohnlage_wahr <- factor(korrekt_model_linear_ausserhalb$Wohnlage_wahr, levels = levels_kombiniert)
+
+#  Zentral und Außerhalb zusammenfügen (rbind)
+fehler_model_linear_kombiniert <- rbind(fehler_model_linear_zentral, fehler_model_linear_ausserhalb)
+korrekt_model_linear_kombiniert <- rbind(korrekt_model_linear_zentral, korrekt_model_linear_ausserhalb)
+
+#  WGS84 sicherstellen (st_transform)
+fehler_model_linear_kombiniert_wgs <- st_transform(fehler_model_linear_kombiniert, crs = 4326)
+korrekt_model_linear_kombiniert_wgs <- st_transform(korrekt_model_linear_kombiniert, crs = 4326)
+
+#  Farbzuordnung der Punkte für die Leaflet Karte
+fehler_model_linear_kombiniert_wgs <- fehler_model_linear_kombiniert_wgs %>% 
+  mutate(color = case_when(
+    Wohnlage_vorhersage == "durchschnittliche Lage" ~ "#e8f5a4",
+    Wohnlage_vorhersage == "gute Lage" ~ "#afe391",
+    Wohnlage_vorhersage == "beste Lage" ~ "#7FCDBB",
+    Wohnlage_vorhersage == "zentrale durchschnittliche Lage" ~ "#41B6C4",
+    Wohnlage_vorhersage == "zentrale gute Lage" ~ "#1f5a82",
+    Wohnlage_vorhersage == "zentrale beste Lage" ~ "#271352"
+  ))
+
+korrekt_model_linear_kombiniert_wgs <- korrekt_model_linear_kombiniert_wgs %>%
+  mutate(color = case_when(
+    Wohnlage_vorhersage == "durchschnittliche Lage" ~ "#e8f5a4",
+    Wohnlage_vorhersage == "gute Lage" ~ "#afe391",
+    Wohnlage_vorhersage == "beste Lage" ~ "#7FCDBB",
+    Wohnlage_vorhersage == "zentrale durchschnittliche Lage" ~ "#41B6C4",
+    Wohnlage_vorhersage == "zentrale gute Lage" ~ "#1f5a82",
+    Wohnlage_vorhersage == "zentrale beste Lage" ~ "#271352"
+  ))
+
+
+# ==============================================================================
+# ISOLIERTER BLOCK: HAUPTKARTE FÜR LINEARE MODELLE
+# ==============================================================================
+
+library(leaflet)
+library(htmlwidgets)
+library(dplyr)
+
+
+
+#  Isolierte Kopien der bestehenden LINEAREN Datensätze erstellen
+fehler_linear_fuer_karte <- fehler_model_linear_kombiniert_wgs
+korrekt_linear_fuer_karte <- korrekt_model_linear_kombiniert_wgs
+
+#  Hilfsfunktion: Wahrscheinlichkeiten sicher berechnen
+berechne_probs_sicher_linear <- function(df, mod_zentral, mod_ausserhalb) {
+  df$prob_durchschnittlich <- NA
+  df$prob_gut <- NA
+  df$prob_beste <- NA
+  
+  # Filter: Welche Punkte sind zentral, welche außerhalb?
+  idx_zentral <- df$Wohnlage_wahr %in% c("zentrale durchschnittliche Lage", "zentrale gute Lage", "zentrale beste Lage")
+  idx_ausserhalb <- !idx_zentral
+  
+  # Zentrales Modell anwenden
+  if(any(idx_zentral)) {
+    p_z <- predict(mod_zentral, newdata = df[idx_zentral, ], type = "response")
+    df$prob_durchschnittlich[idx_zentral] <- p_z[, 1]
+    df$prob_gut[idx_zentral]              <- p_z[, 2]
+    df$prob_beste[idx_zentral]            <- p_z[, 3]
+  }
+  
+  # Ausserhalb Modell anwenden
+  if(any(idx_ausserhalb)) {
+    p_a <- predict(mod_ausserhalb, newdata = df[idx_ausserhalb, ], type = "response")
+    df$prob_durchschnittlich[idx_ausserhalb] <- p_a[, 1]
+    df$prob_gut[idx_ausserhalb]              <- p_a[, 2]
+    df$prob_beste[idx_ausserhalb]            <- p_a[, 3]
+  }
+  
+  return(df)
+}
+
+#  Wahrscheinlichkeiten an die Kopien anhängen (mit den LINEAREN Modellen)
+fehler_linear_fuer_karte <- berechne_probs_sicher_linear(fehler_linear_fuer_karte, model_linear_zentral, model_linear_ausserhalb)
+korrekt_linear_fuer_karte <- berechne_probs_sicher_linear(korrekt_linear_fuer_karte, model_linear_zentral, model_linear_ausserhalb)
+
+# HTML Popups generieren
+erstelle_popup_html <- function(df) {
+  paste0(
+    "<b>Wahre Lage:</b> ", df$Wohnlage_wahr, "<br>",
+    "<b>Vorhersage:</b> ", df$Wohnlage_vorhersage, "<br>",
+    "<hr>",
+    "<b>Klassenwahrscheinlichkeiten:</b><br>",
+    "Durchschnittliche Lage: ", round(df$prob_durchschnittlich * 100, 1), " %<br>",
+    "Gute Lage: ", round(df$prob_gut * 100, 1), " %<br>",
+    "Beste Lage: ", round(df$prob_beste * 100, 1), " %<br>",
+    "<hr>",
+    "<b>Distanz Grünfläche (>10ha):</b> ", df$erreichbarkeit_gr10ha_in_metern_adr, " m<br>",
+    "<b>Fahrtzeit Innenstadt (ÖPNV):</b> ", df$erreichbarkeit_innenstadt_in_minuten_adr, " min<br>",
+    "<b>Erreichbarkeit nächste Haltestelle:</b> ", df$erreichbarkeit_naechstehaltestelle_in_minuten_adr, " min<br>",
+    "<b>Fußweg Grundschule:</b> ", df$grundschul_num, " m<br>",
+    "<b>Fußweg Spielplatz:</b> ", df$spielplatz_num, " m<br>",
+    "<b>Fußweg Kita:</b> ", df$kitakigaho_num, " m<br>",
+    "<b>Fußweg Ortszentrum:</b> ", df$ortszentru_num, " m<br>", 
+    "<b>log(Bodenrichtwert):</b> ", round(df$brw_log, 2), "<br>",
+    "<b>Bodenrichtwert:</b> ", df$brw, " €/m²<br>",
+    "<b>Anteil Verkehrsfläche im Viertel:</b> ", round(df$anteil_vf_sv, 2), " %<br>",
+    "<b>Anteil Grünfläche im Viertel:</b> ", round(df$anteil_gf_sv, 2), " %<br>"
+  )
+}
+
+# Popup-Texte fest in die Datensätze schreiben
+fehler_linear_fuer_karte <- fehler_linear_fuer_karte %>% mutate(popup_text = erstelle_popup_html(.))
+korrekt_linear_fuer_karte <- korrekt_linear_fuer_karte %>% mutate(popup_text = erstelle_popup_html(.))
+
+
+# Karte
+
+punkt_groesse <- 6 
+
+cat("Zeichne die Karte für die linearen Modelle...\n")
+
+interaktive_karte_linear_werte <- leaflet(options = leafletOptions(preferCanvas = TRUE)) %>%
+  setView(lng = 11.5761, lat = 48.1371, zoom = 11) %>%
+  addProviderTiles("CartoDB.Positron") %>%
+  
+  # Hintergrund: Wohnlagen
+  addPolygons(
+    data = wohnlagen_muc_wgs,
+    fillColor = ~color,
+    fillOpacity = 0.5,
+    color = "black",
+    weight = 0.5,
+    label = ~as.character(Wohnlage)
+  ) %>%
+  
+  # Linien: Grenzen
+  addPolylines(
+    data = wohnlage_grenzen_wgs, 
+    color = "black", 
+    weight = 0.5
+  ) %>%
+  
+  # KORREKTE PUNKTE (Dünner schwarzer Rand, auf der Karte untenliegend)
+  addCircleMarkers(
+    data = korrekt_linear_fuer_karte,
+    fillColor = ~color,
+    fillOpacity = 1,
+    color = "black",
+    stroke = TRUE,
+    weight = 1,         
+    opacity = 1,        
+    radius = punkt_groesse,
+    popup = ~popup_text, 
+    group = "Korrekt"
+  ) %>%
+  
+  # FEHLERHAFTE PUNKTE (Dicker roter Rand, auf der Karte obenliegend)
+  addCircleMarkers(
+    data = fehler_linear_fuer_karte,
+    fillColor = ~color,
+    fillOpacity = 1,
+    color = "red",
+    stroke = TRUE,
+    weight = 2,         
+    opacity = 1,        
+    radius = punkt_groesse,
+    popup = ~popup_text, 
+    group = "Fehler"
+  ) %>%
+  
+  # Legende für die Wohnlagen
+  addLegend(
+    position = "bottomright",
+    colors = unname(wohnlage_farben), 
+    labels = names(wohnlage_farben),
+    title = "Wohnlage",
+    opacity = 1
+  ) %>%
+  
+  # Interaktives Kontrollkästchen oben rechts
+  addLayersControl(
+    overlayGroups = c("Fehler", "Korrekt"),
+    options = layersControlOptions(collapsed = FALSE)
+  )
+
+# Karte im Viewer anzeigen
+print(interaktive_karte_linear_werte)
+
+# Karte als HTML speichern
+if (!dir.exists("interaktive_karten")) dir.create("interaktive_karten")
+
+# NEUER DATEINAME: interaktive_karte_linear_werte.html
+saveWidget(interaktive_karte_linear_werte, file = "interaktive_karten/interaktive_karte_linear_werte.html", selfcontained = TRUE)
+
+
