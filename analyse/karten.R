@@ -261,6 +261,187 @@ saveWidget(interaktive_karte_model, file = "interaktive_karten/interaktive_karte
 #browseURL("interaktive_karten/interaktive_karte_model.html")
 
 
+
+
+
+
+
+
+
+# ==============================================================================
+# ISOLIERTER BLOCK: verbesserte hauptkarte
+# ==============================================================================
+
+library(leaflet)
+library(htmlwidgets)
+library(dplyr)
+
+cat("Bereite Daten für die Evaluationskarte vor...\n")
+
+# 1. Isolierte Kopien deiner bestehenden Datensätze erstellen
+fehler_fuer_karte <- fehler_model_gam_kombiniert_wgs
+korrekt_fuer_karte <- korrekt_model_gam_kombiniert_wgs
+
+# 2. Hilfsfunktion: Wahrscheinlichkeiten sicher berechnen
+# (Prüft automatisch, ob der Punkt zentral ist und wendet das richtige Modell an)
+berechne_probs_sicher <- function(df, mod_zentral, mod_ausserhalb) {
+  df$prob_durchschnittlich <- NA
+  df$prob_gut <- NA
+  df$prob_beste <- NA
+  
+  # Filter: Welche Punkte sind zentral, welche außerhalb?
+  idx_zentral <- df$Wohnlage_wahr %in% c("zentrale durchschnittliche Lage", "zentrale gute Lage", "zentrale beste Lage")
+  idx_ausserhalb <- !idx_zentral
+  
+  # Zentrales Modell anwenden
+  if(any(idx_zentral)) {
+    p_z <- predict(mod_zentral, newdata = df[idx_zentral, ], type = "response")
+    df$prob_durchschnittlich[idx_zentral] <- p_z[, 1]
+    df$prob_gut[idx_zentral]              <- p_z[, 2]
+    df$prob_beste[idx_zentral]            <- p_z[, 3]
+  }
+  
+  # Ausserhalb Modell anwenden
+  if(any(idx_ausserhalb)) {
+    p_a <- predict(mod_ausserhalb, newdata = df[idx_ausserhalb, ], type = "response")
+    df$prob_durchschnittlich[idx_ausserhalb] <- p_a[, 1]
+    df$prob_gut[idx_ausserhalb]              <- p_a[, 2]
+    df$prob_beste[idx_ausserhalb]            <- p_a[, 3]
+  }
+  
+  return(df)
+}
+
+# 3. Wahrscheinlichkeiten an die Kopien anhängen
+fehler_fuer_karte <- berechne_probs_sicher(fehler_fuer_karte, model_gam_zentral, model_gam_ausserhalb)
+korrekt_fuer_karte <- berechne_probs_sicher(korrekt_fuer_karte, model_gam_zentral, model_gam_ausserhalb)
+
+# 4. HTML Popups generieren
+erstelle_popup_html <- function(df) {
+  paste0(
+    "<b>Wahre Lage:</b> ", df$Wohnlage_wahr, "<br>",
+    "<b>Vorhersage:</b> ", df$Wohnlage_vorhersage, "<br>",
+    "<hr>",
+    "<b>Klassenwahrscheinlichkeiten:</b><br>",
+    "Durchschnittliche Lage: ", round(df$prob_durchschnittlich * 100, 1), " %<br>",
+    "Gute Lage: ", round(df$prob_gut * 100, 1), " %<br>",
+    "Beste Lage: ", round(df$prob_beste * 100, 1), " %<br>",
+    "<hr>",
+    "<b>Distanz Grünfläche (>10ha):</b> ", df$erreichbarkeit_gr10ha_in_metern_adr, " m<br>",
+    "<b>Fahrtzeit Innenstadt (ÖPNV):</b> ", df$erreichbarkeit_innenstadt_in_minuten_adr, " min<br>",
+    "<b>Erreichbarkeit nächste Haltestelle:</b> ", df$erreichbarkeit_naechstehaltestelle_in_minuten_adr, " min<br>",
+    "<b>Fußweg Grundschule:</b> ", df$grundschul_num, " m<br>",
+    "<b>Fußweg Spielplatz:</b> ", df$spielplatz_num, " m<br>",
+    "<b>Fußweg Kita:</b> ", df$kitakigaho_num, " m<br>",
+    "<b>Fußweg Ortszentrum:</b> ", df$ortszentru_num, " m<br>", 
+    "<b>log(Bodenrichtwert):</b> ", round(df$brw_log, 2), "<br>",
+    "<b>Bodenrichtwert:</b> ", df$brw, " €/m²<br>",
+    "<b>Anteil Verkehrsfläche im Viertel:</b> ", round(df$anteil_vf_sv, 2), " %<br>",
+    "<b>Anteil Grünfläche im Viertel:</b> ", round(df$anteil_gf_sv, 2), " %<br>"
+  )
+}
+
+# Popup-Texte fest in die Datensätze schreiben
+fehler_fuer_karte <- fehler_fuer_karte %>% mutate(popup_text = erstelle_popup_html(.))
+korrekt_fuer_karte <- korrekt_fuer_karte %>% mutate(popup_text = erstelle_popup_html(.))
+
+
+# ==============================================================================
+# 5. FINALE KARTE BAUEN & SPEICHERN
+# ==============================================================================
+
+punkt_groesse <- 6 
+
+cat("Zeichne die interaktive Karte...\n")
+
+interaktive_karte_model_werte <- leaflet(options = leafletOptions(preferCanvas = TRUE)) %>%
+  setView(lng = 11.5761, lat = 48.1371, zoom = 11) %>%
+  addProviderTiles("CartoDB.Positron") %>%
+  
+  # Hintergrund: Wohnlagen
+  addPolygons(
+    data = wohnlagen_muc_wgs,
+    fillColor = ~color,
+    fillOpacity = 0.5,
+    color = "black",
+    weight = 0.5,
+    label = ~as.character(Wohnlage)
+  ) %>%
+  
+  # Linien: Grenzen
+  addPolylines(
+    data = wohnlage_grenzen_wgs, 
+    color = "black", 
+    weight = 0.5
+  ) %>%
+  
+  # KORREKTE PUNKTE (Dünner schwarzer Rand, auf der Karte untenliegend)
+  addCircleMarkers(
+    data = korrekt_fuer_karte,
+    fillColor = ~color,
+    fillOpacity = 1,
+    color = "black",
+    stroke = TRUE,
+    weight = 1,         
+    opacity = 1,        
+    radius = punkt_groesse,
+    popup = ~popup_text, 
+    group = "Korrekt"
+  ) %>%
+  
+  # FEHLERHAFTE PUNKTE (Dicker roter Rand, auf der Karte obenliegend)
+  addCircleMarkers(
+    data = fehler_fuer_karte,
+    fillColor = ~color,
+    fillOpacity = 1,
+    color = "red",
+    stroke = TRUE,
+    weight = 2,         
+    opacity = 1,        
+    radius = punkt_groesse,
+    popup = ~popup_text, 
+    group = "Fehler"
+  ) %>%
+  
+  # Legende für die Wohnlagen (unname nicht vergessen!)
+  addLegend(
+    position = "bottomright",
+    colors = unname(wohnlage_farben), 
+    labels = names(wohnlage_farben),
+    title = "Wohnlage",
+    opacity = 1
+  ) %>%
+  
+  # Interaktives Kontrollkästchen oben rechts
+  addLayersControl(
+    overlayGroups = c("Fehler", "Korrekt"),
+    options = layersControlOptions(collapsed = FALSE)
+  )
+
+# Karte im Viewer anzeigen
+print(interaktive_karte_model_werte)
+
+# Karte als HTML speichern
+if (!dir.exists("interaktive_karten")) dir.create("interaktive_karten")
+saveWidget(interaktive_karte_model_werte, file = "interaktive_karten/interaktive_karte_model_werte.html", selfcontained = TRUE)
+
+cat("Fertig! Karte erfolgreich generiert und gespeichert.\n")
+
+
+
+#-------------------------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+
+
+# HAUPTKARTE MIT ALLEM
 interaktive_karte_model_werte <- leaflet() %>%
   setView(lng = 11.5761, lat = 48.1371, zoom = 11) %>%
   addProviderTiles("CartoDB.Positron") %>%
@@ -342,7 +523,11 @@ saveWidget(interaktive_karte_model_werte, file = "interaktive_karten/interaktive
 
 # Räumliche Verschneidung (Spatial Join)
 # Wir ziehen uns einfach die EBENE aus dem Flächen-Polygon
-punkte_validierung <- st_join(punkte_sf, wohnlagen_muc, join = st_intersects)
+# 1. Beide Datensätze auf exakt dasselbe Koordinatensystem zwingen
+model_data_complete_sf <- st_transform(model_data_complete_sf, st_crs(wohnlagen_muc2))
+
+# 2. Jetzt klappt der Spatial Join fehlerfrei!
+punkte_validierung <- st_join(model_data_complete_sf, wohnlagen_muc2, join = st_intersects)
 
 # Kontrolle und Abgleich
 punkte_validierung <- punkte_validierung %>%
@@ -359,7 +544,7 @@ punkte_validierung <- punkte_validierung %>%
     ),
     
     # Abgleich: Stimmt unsere übersetzte Geodaten-Lage mit deinen echten Labels überein?
-    Lage_stimmt_ueberein = as.character(Wohnlage_wahr) == Erwartete_Wohnlage_Raum
+    Lage_stimmt_ueberein = as.character(wohnlage_bedeutung) == Erwartete_Wohnlage_Raum
   )
 
 # Auswertung anzeigen
@@ -369,17 +554,10 @@ print(table(Korrekt_Platziert = punkte_validierung$Lage_stimmt_ueberein, useNA =
 # Abweichler extrahieren, falls es welche gibt
 punkte_fehlerhaft_platziert <- punkte_validierung %>% 
   filter(Lage_stimmt_ueberein == FALSE | is.na(Lage_stimmt_ueberein)) %>%
-  select(Wohnlage_wahr, Erwartete_Wohnlage_Raum, EBENE)
+  select(wohnlage_bedeutung, Erwartete_Wohnlage_Raum, EBENE)
 
 cat("\nAnzahl der Fehler: ", nrow(punkte_fehlerhaft_platziert), "\n")
 
-
-
-
-
-library(leaflet)
-library(sf)
-library(dplyr)
 
 # 1. Daten in die zwei Fehler-Gruppen aufteilen und für Leaflet transformieren (WGS84)
 punkte_echte_fehler_wgs <- punkte_fehlerhaft_platziert %>%
@@ -410,7 +588,7 @@ karte_validierung_gefiltert <- leaflet() %>%
     color = "blue", fillColor = "blue", fillOpacity = 0.8, radius = 6, weight = 2,
     popup = ~paste0(
       "<b>Art:</b> Abweichende Wohnlage<br>",
-      "<b>Wahre Wohnlage Datensatz:</b> ", Wohnlage_wahr, "<br>",
+      "<b>Wahre Wohnlage Datensatz:</b> ", wohnlage_bedeutung, "<br>",
       "<b>Wohnlage basierend auf Flächen:</b> ", Erwartete_Wohnlage_Raum, "<br>"
     ),
     group = "Abweichende Wohnlagen"
@@ -422,7 +600,7 @@ karte_validierung_gefiltert <- leaflet() %>%
     color = "black", fillColor = "yellow", fillOpacity = 0.8, radius = 6, weight = 1,
     popup = ~paste0(
       "<b>Art:</b> Wohnlage aus Fläche unermittelbar<br>",
-      "<b>Wahre Wohnlage Datensatz:</b> ", Wohnlage_wahr, "<br>",
+      "<b>Wahre Wohnlage Datensatz:</b> ", wohnlage_bedeutung, "<br>",
       "<b>Problem:</b> Punkt liegt in keinem Wohnlagen-Polygon."
     ),
     group = "Fehlende Fläche"
@@ -441,3 +619,237 @@ karte_validierung_gefiltert
 saveWidget(karte_validierung_gefiltert, 
            file = "interaktive_karten/karte_validierung_gefiltert.html",
            selfcontained = TRUE)
+
+
+# Variablenkarten
+
+library(leaflet)
+library(htmlwidgets)
+library(dplyr)
+library(sf)
+
+variablen_liste <- c(
+  "Distanz Grünfläche (>10ha) [m]" = "erreichbarkeit_gr10ha_in_metern_adr",
+  "Fahrtzeit Innenstadt (ÖPNV) [min]" = "erreichbarkeit_innenstadt_in_minuten_adr",
+  "Erreichbarkeit nächste Haltestelle [min]" = "erreichbarkeit_naechstehaltestelle_in_minuten_adr",
+  "Fußweg Grundschule [m]" = "grundschul_num",
+  "Fußweg Spielplatz [m]" = "spielplatz_num",
+  "Fußweg Kita [m]" = "kitakigaho_num",
+  "Fußweg Ortszentrum [m]" = "ortszentru_num",
+  "log(Bodenrichtwert)" = "brw_log",
+  "Bodenrichtwert [€/m²]" = "brw",
+  "Anteil Verkehrsfläche im Viertel [%]" = "anteil_vf_sv",
+  "Anteil Grünfläche im Viertel [%]" = "anteil_gf_sv"
+)
+
+ziel_ordner <- "interaktive_karten/variablen"
+
+if (!dir.exists(ziel_ordner)) {
+  dir.create(ziel_ordner, recursive = TRUE)
+}
+
+# Farben für die Hintergrund-Legende definieren
+wohnlage_farben <- c(
+  "durchschnittliche Lage" = "#e8f5a4",
+  "gute Lage" = "#afe391",
+  "beste Lage" = "#7FCDBB",
+  "zentrale durchschnittliche Lage" = "#41B6C4",
+  "zentrale gute Lage" = "#1f5a82",
+  "zentrale beste Lage" = "#271352"
+)
+
+cat("Erstelle", length(variablen_liste), "Variablenkarten...\n")
+
+lapply(names(variablen_liste), function(var_titel) {
+  
+  var_spalte <- variablen_liste[[var_titel]]
+  
+  # Sicherheitscheck
+  if (!var_spalte %in% names(model_data_complete_wgs)) {
+    cat("Variable fehlt:", var_spalte, "\n")
+    return(NULL)
+  }
+  
+  # Datensatz mit Variablenwert
+  daten <- model_data_complete_wgs %>%
+    mutate(
+      wert = .data[[var_spalte]],
+      label = paste0(var_titel, ": ", round(wert, 2))
+    )
+  
+  # Farbpalette für die Punkte
+  pal <- colorNumeric(
+    palette = "magma",
+    domain = daten$wert
+  )
+  
+  daten <- daten %>%
+    mutate(farbe = pal(wert))
+  
+  # Karte erzeugen
+  karte <- leaflet(data = daten) %>%
+    
+    addProviderTiles("CartoDB.Positron") %>%
+    
+    # NEU 1: Hintergrundflächen (Wohnlagen) hinzufügen
+    addPolygons(
+      data = wohnlagen_muc_wgs,
+      fillColor = ~color,      # Nutzt die vorbereitete 'color' Spalte aus wohnlagen_muc_wgs
+      fillOpacity = 0.5,       # Leicht transparent
+      color = "black",         # Linienfarbe der Polygone
+      weight = 0.5,
+      label = ~Wohnlage        # Tooltip beim Drüberfahren
+    ) %>%
+    
+    # NEU 2: Legende für die Wohnlagen (unten links, damit es nicht überlappt)
+    addLegend(
+      position = "bottomleft",
+      colors = unname(wohnlage_farben), 
+      labels = names(wohnlage_farben),
+      title = "Wohnlage (Hintergrund)",
+      opacity = 0.8
+    ) %>%
+    
+    addPolylines(
+      data = wohnlage_grenzen_wgs,
+      color = "black",
+      weight = 0.5
+    ) %>%
+    
+    addCircleMarkers(
+      radius = 3,
+      stroke = FALSE,
+      fillColor = ~farbe,
+      fillOpacity = 0.9,
+      label = ~label
+    ) %>%
+    
+    # Legende für die Variablen (Punkte)
+    addLegend(
+      position = "bottomright",
+      pal = pal,
+      values = daten$wert,
+      title = var_titel,
+      opacity = 1
+    ) %>%
+    
+    setView(
+      lng = 11.5761,
+      lat = 48.1371,
+      zoom = 11
+    )
+  
+  # Datei speichern
+  dateiname <- paste0(
+    ziel_ordner,
+    "/interaktive_karte_",
+    var_spalte,
+    ".html"
+  )
+  
+  saveWidget(
+    karte,
+    file = dateiname,
+    selfcontained = TRUE
+  )
+  
+  cat("✓ Karte gespeichert:", var_spalte, "\n")
+})
+
+
+# variablenkarten scneller
+
+# Variablenkarten (Canvas-Modus MIT Labels)
+
+library(leaflet)
+library(htmlwidgets)
+library(dplyr)
+library(sf)
+
+ziel_ordner <- "interaktive_karten/variablen"
+
+if (!dir.exists(ziel_ordner)) {
+  dir.create(ziel_ordner, recursive = TRUE)
+}
+
+wohnlage_farben <- c(
+  "durchschnittliche Lage" = "#e8f5a4",
+  "gute Lage" = "#afe391",
+  "beste Lage" = "#7FCDBB",
+  "zentrale durchschnittliche Lage" = "#41B6C4",
+  "zentrale gute Lage" = "#1f5a82",
+  "zentrale beste Lage" = "#271352"
+)
+
+cat("Erstelle", length(variablen_liste), "Variablenkarten...\n")
+
+lapply(names(variablen_liste), function(var_titel) {
+  
+  var_spalte <- variablen_liste[[var_titel]]
+  
+  if (!var_spalte %in% names(model_data_complete_wgs)) {
+    cat("Variable fehlt:", var_spalte, "\n")
+    return(NULL)
+  }
+  
+  daten <- model_data_complete_wgs %>%
+    mutate(
+      wert = .data[[var_spalte]],
+      label = paste0(var_titel, ": ", round(wert, 2))
+    )
+  
+  pal <- colorNumeric(palette = "magma", domain = daten$wert)
+  
+  daten <- daten %>% mutate(farbe = pal(wert))
+  
+  # Canvas-Modus bleibt AN (das macht es schnell!)
+  karte <- leaflet(data = daten, options = leafletOptions(preferCanvas = TRUE)) %>%
+    
+    addProviderTiles("CartoDB.Positron") %>%
+    
+    addPolygons(
+      data = wohnlagen_muc_wgs,
+      fillColor = ~color,
+      fillOpacity = 0.5,
+      color = "black",
+      weight = 0.5,
+      label = ~as.character(Wohnlage)
+    ) %>%
+    
+    addLegend(
+      position = "bottomleft",
+      colors = unname(wohnlage_farben), 
+      labels = names(wohnlage_farben),
+      title = "Wohnlage (Hintergrund)",
+      opacity = 0.8
+    ) %>%
+    
+    addPolylines(
+      data = wohnlage_grenzen_wgs,
+      color = "black",
+      weight = 0.5
+    ) %>%
+    
+    addCircleMarkers(
+      radius = 3,
+      stroke = FALSE,
+      fillColor = ~farbe,
+      fillOpacity = 0.9,
+      label = ~label # LABELS SIND WIEDER AKTIVIERT!
+    ) %>%
+    
+    addLegend(
+      position = "bottomright",
+      pal = pal,
+      values = daten$wert,
+      title = var_titel,
+      opacity = 1
+    ) %>%
+    
+    setView(lng = 11.5761, lat = 48.1371, zoom = 11)
+  
+  dateiname <- paste0(ziel_ordner, "/interaktive_karte_", var_spalte, ".html")
+  saveWidget(karte, file = dateiname, selfcontained = TRUE)
+  
+  cat("✓ Karte gespeichert (Canvas + Labels):", var_spalte, "\n")
+})
