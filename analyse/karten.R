@@ -916,3 +916,507 @@ if (!dir.exists("interaktive_karten")) dir.create("interaktive_karten")
 saveWidget(interaktive_karte_linear_werte, file = "interaktive_karten/interaktive_karte_linear_werte.html", selfcontained = TRUE)
 
 
+
+
+
+
+# ==============================================================================
+# SPATIAL OUTLIER DETECTION (Im hellen Design mit vollständigen Popups)
+# ==============================================================================
+
+library(sf)
+library(dplyr)
+library(leaflet)
+library(htmlwidgets)
+
+cat("Bereite Daten für detaillierte Ausreißer-Karte vor...\n")
+
+# 1. Komplette Vorhersage-Daten zusammenführen (OHNE 'select', damit Popups bleiben!)
+alle_vorhersagen_voll <- rbind(
+  fehler_model_gam_kombiniert_wgs,
+  korrekt_model_gam_kombiniert_wgs
+)
+
+# 2. In lokales metrisches System (UTM) transformieren
+alle_vorhersagen_utm <- st_transform(alle_vorhersagen_voll, 25832)
+
+# 3. Radius definieren & Nachbarn finden
+such_radius_meter <- 150 
+cat(paste("Suche nach Nachbarn im Umkreis von", such_radius_meter, "Metern...\n"))
+nachbarn_liste <- st_is_within_distance(alle_vorhersagen_utm, dist = such_radius_meter)
+
+# 4. Ausreißer-Algorithmus anwenden
+cat("Identifiziere Ausreißer...\n")
+ist_ausreisser <- sapply(seq_along(nachbarn_liste), function(i) {
+  nachbar_indices <- setdiff(nachbarn_liste[[i]], i)
+  
+  if(length(nachbar_indices) < 2) return(FALSE) 
+  
+  eigene_klasse <- as.character(alle_vorhersagen_utm$Wohnlage_vorhersage[i])
+  nachbar_klassen <- as.character(alle_vorhersagen_utm$Wohnlage_vorhersage[nachbar_indices])
+  
+  häufigkeiten <- sort(table(nachbar_klassen), decreasing = TRUE)
+  modus_klasse <- names(häufigkeiten)[1]
+  
+  return(eigene_klasse != modus_klasse)
+})
+
+# 5. Zurück nach WGS84 und aufteilen
+alle_vorhersagen_wgs <- st_transform(alle_vorhersagen_utm, 4326)
+alle_vorhersagen_wgs$Ausreisser <- ist_ausreisser
+
+# In zwei Gruppen teilen für unterschiedliches Styling
+daten_normal <- alle_vorhersagen_wgs %>% filter(Ausreisser == FALSE)
+daten_ausreisser <- alle_vorhersagen_wgs %>% filter(Ausreisser == TRUE)
+
+cat(paste("Fertig!", nrow(daten_ausreisser), "Ausreißer gefunden. Zeichne Karte...\n"))
+
+
+# ==============================================================================
+# 6. HTML POPUPS GENERIEREN (Kugelsicher!)
+# ==============================================================================
+cat("4. Generiere detaillierte HTML-Popups...\n")
+
+erstelle_popup_html <- function(df) {
+  paste0(
+    "<b>Wahre Lage:</b> ", df$Wohnlage_wahr, "<br>",
+    "<b>Vorhersage:</b> ", df$Wohnlage_vorhersage, "<br>",
+    "<hr>",
+    # Falls du die Wahrscheinlichkeiten berechnet hast, werden sie hier angezeigt:
+    "<b>Klassenwahrscheinlichkeiten:</b><br>",
+    "Durchschnittliche Lage: ", round(df$prob_durchschnittlich * 100, 1), " %<br>",
+    "Gute Lage: ", round(df$prob_gut * 100, 1), " %<br>",
+    "Beste Lage: ", round(df$prob_beste * 100, 1), " %<br>",
+    "<hr>",
+    "<b>Distanz Grünfläche (>10ha):</b> ", df$erreichbarkeit_gr10ha_in_metern_adr, " m<br>",
+    "<b>Fahrtzeit Innenstadt (ÖPNV):</b> ", df$erreichbarkeit_innenstadt_in_minuten_adr, " min<br>",
+    "<b>Erreichbarkeit nächste Haltestelle:</b> ", df$erreichbarkeit_naechstehaltestelle_in_minuten_adr, " min<br>",
+    "<b>Fußweg Grundschule:</b> ", df$grundschul_num, " m<br>",
+    "<b>Fußweg Spielplatz:</b> ", df$spielplatz_num, " m<br>",
+    "<b>Fußweg Kita:</b> ", df$kitakigaho_num, " m<br>",
+    "<b>Fußweg Ortszentrum:</b> ", df$ortszentru_num, " m<br>", 
+    "<b>log(Bodenrichtwert):</b> ", round(df$brw_log, 2), "<br>",
+    "<b>Bodenrichtwert:</b> ", df$brw, " €/m²<br>",
+    "<b>Anteil Verkehrsfläche im Viertel:</b> ", round(df$anteil_vf_sv, 2), " %<br>",
+    "<b>Anteil Grünfläche im Viertel:</b> ", round(df$anteil_gf_sv, 2), " %<br>"
+  )
+}
+
+# HIER IST DER FIX: Wir zwingen die Textspalte hart in die Datensätze
+daten_normal$popup_text <- erstelle_popup_html(daten_normal)
+daten_ausreisser$popup_text <- erstelle_popup_html(daten_ausreisser)
+
+
+# ==============================================================================
+# 7. KARTE BAUEN UND SPEICHERN
+# ==============================================================================
+cat("5. Zeichne Karte...\n")
+
+karte_ausreisser_detail <- leaflet(options = leafletOptions(preferCanvas = TRUE)) %>%
+  setView(lng = 11.5761, lat = 48.1371, zoom = 12) %>%
+  addProviderTiles("CartoDB.Positron") %>% # Heller Hintergrund
+  
+  # Hintergrundflächen (Wohnlagen)
+  addPolygons(
+    data = wohnlagen_muc_wgs,
+    fillColor = ~color,
+    fillOpacity = 0.4,   # Etwas blasser
+    color = "black",
+    weight = 0.5,
+    label = ~as.character(Wohnlage)
+  ) %>%
+  
+  # Linien (Grenzen)
+  addPolylines(
+    data = wohnlage_grenzen_wgs, 
+    color = "black", 
+    weight = 0.5
+  ) %>%
+  
+  # NORMALE PUNKTE (Normale Größe, schwarzer Rand)
+  addCircleMarkers(
+    data = daten_normal,
+    fillColor = ~color,       
+    fillOpacity = 1,
+    color = "black",          
+    stroke = TRUE,
+    weight = 1,
+    radius = 4,               
+    popup = ~popup_text,      # Die neu generierten Popups!
+    group = "Normale Punkte"
+  ) %>%
+  
+  # AUSREISSER PUNKTE (Größer, dicker roter Rand)
+  addCircleMarkers(
+    data = daten_ausreisser,
+    fillColor = ~color,       
+    fillOpacity = 1,
+    color = "red",            # Dicker roter Rand!
+    stroke = TRUE,
+    weight = 3,               
+    radius = 7,               # Größer!
+    popup = ~popup_text,      # Die neu generierten Popups!
+    group = "Ausreißer (Inseln)"
+  ) %>%
+  
+  # Legende
+  addLegend(
+    position = "bottomright",
+    colors = unname(wohnlage_farben), 
+    labels = names(wohnlage_farben),
+    title = "Vorhersage & Hintergrund",
+    opacity = 1
+  ) %>%
+  
+  # Ebenen-Steuerung
+  addLayersControl(
+    overlayGroups = c("Ausreißer (Inseln)", "Normale Punkte"),
+    options = layersControlOptions(collapsed = FALSE)
+  )
+
+# Karte anzeigen
+print(karte_ausreisser_detail)
+
+# Speichern
+if (!dir.exists("interaktive_karten")) dir.create("interaktive_karten")
+saveWidget(karte_ausreisser_detail, file = "interaktive_karten/karte_raum_ausreisser_detail.html", selfcontained = TRUE)
+
+
+
+
+
+
+
+
+
+
+
+
+# ==============================================================================
+# SPATIAL OUTLIER DETECTION (KOMPLETT & DETAILLIERT)
+# Inklusive Wahrscheinlichkeiten, HTML-Popups und Kartengenerierung
+# ==============================================================================
+
+library(sf)
+library(dplyr)
+library(leaflet)
+library(htmlwidgets)
+
+cat("1. Bereite Daten für detaillierte Ausreißer-Karte vor...\n")
+
+# 1. Komplette Vorhersage-Daten zusammenführen
+alle_vorhersagen_voll <- rbind(
+  fehler_model_gam_kombiniert_wgs,
+  korrekt_model_gam_kombiniert_wgs
+)
+
+# ==============================================================================
+# NEU: 2. WAHRSCHEINLICHKEITEN BERECHNEN (Damit die Popups funktionieren!)
+# ==============================================================================
+cat("2. Berechne Klassenwahrscheinlichkeiten...\n")
+
+berechne_probs_sicher <- function(df, mod_zentral, mod_ausserhalb) {
+  df$prob_durchschnittlich <- NA
+  df$prob_gut <- NA
+  df$prob_beste <- NA
+  
+  idx_zentral <- df$Wohnlage_wahr %in% c("zentrale durchschnittliche Lage", "zentrale gute Lage", "zentrale beste Lage")
+  idx_ausserhalb <- !idx_zentral
+  
+  if(any(idx_zentral)) {
+    p_z <- predict(mod_zentral, newdata = df[idx_zentral, ], type = "response")
+    df$prob_durchschnittlich[idx_zentral] <- p_z[, 1]
+    df$prob_gut[idx_zentral]              <- p_z[, 2]
+    df$prob_beste[idx_zentral]            <- p_z[, 3]
+  }
+  
+  if(any(idx_ausserhalb)) {
+    p_a <- predict(mod_ausserhalb, newdata = df[idx_ausserhalb, ], type = "response")
+    df$prob_durchschnittlich[idx_ausserhalb] <- p_a[, 1]
+    df$prob_gut[idx_ausserhalb]              <- p_a[, 2]
+    df$prob_beste[idx_ausserhalb]            <- p_a[, 3]
+  }
+  return(df)
+}
+
+alle_vorhersagen_voll <- berechne_probs_sicher(alle_vorhersagen_voll, model_gam_zentral, model_gam_ausserhalb)
+
+
+# ==============================================================================
+# 3. AUSREISSER (SPECKLES) FINDEN
+# ==============================================================================
+cat("3. Suche nach räumlichen Ausreißern (150m Radius)...\n")
+
+alle_vorhersagen_utm <- st_transform(alle_vorhersagen_voll, 25832)
+nachbarn_liste <- st_is_within_distance(alle_vorhersagen_utm, dist = 150)
+
+ist_ausreisser <- sapply(seq_along(nachbarn_liste), function(i) {
+  nachbar_indices <- setdiff(nachbarn_liste[[i]], i)
+  if(length(nachbar_indices) < 2) return(FALSE) 
+  
+  eigene_klasse <- as.character(alle_vorhersagen_utm$Wohnlage_vorhersage[i])
+  nachbar_klassen <- as.character(alle_vorhersagen_utm$Wohnlage_vorhersage[nachbar_indices])
+  
+  häufigkeiten <- sort(table(nachbar_klassen), decreasing = TRUE)
+  modus_klasse <- names(häufigkeiten)[1]
+  
+  return(eigene_klasse != modus_klasse)
+})
+
+# Zurück nach WGS84 und aufteilen
+alle_vorhersagen_wgs <- st_transform(alle_vorhersagen_utm, 4326)
+alle_vorhersagen_wgs$Ausreisser <- ist_ausreisser
+
+daten_normal <- alle_vorhersagen_wgs %>% filter(Ausreisser == FALSE)
+daten_ausreisser <- alle_vorhersagen_wgs %>% filter(Ausreisser == TRUE)
+
+
+# ==============================================================================
+# 4. HTML POPUPS GENERIEREN (Kugelsicher!)
+# ==============================================================================
+cat("4. Generiere detaillierte HTML-Popups...\n")
+
+erstelle_popup_html <- function(df) {
+  paste0(
+    "<b>Wahre Lage:</b> ", df$Wohnlage_wahr, "<br>",
+    "<b>Vorhersage:</b> ", df$Wohnlage_vorhersage, "<br>",
+    "<hr>",
+    "<b>Klassenwahrscheinlichkeiten:</b><br>",
+    "Durchschnittliche Lage: ", round(df$prob_durchschnittlich * 100, 1), " %<br>",
+    "Gute Lage: ", round(df$prob_gut * 100, 1), " %<br>",
+    "Beste Lage: ", round(df$prob_beste * 100, 1), " %<br>",
+    "<hr>",
+    "<b>Distanz Grünfläche (>10ha):</b> ", df$erreichbarkeit_gr10ha_in_metern_adr, " m<br>",
+    "<b>Fahrtzeit Innenstadt (ÖPNV):</b> ", df$erreichbarkeit_innenstadt_in_minuten_adr, " min<br>",
+    "<b>Erreichbarkeit nächste Haltestelle:</b> ", df$erreichbarkeit_naechstehaltestelle_in_minuten_adr, " min<br>",
+    "<b>Fußweg Grundschule:</b> ", df$grundschul_num, " m<br>",
+    "<b>Fußweg Spielplatz:</b> ", df$spielplatz_num, " m<br>",
+    "<b>Fußweg Kita:</b> ", df$kitakigaho_num, " m<br>",
+    "<b>Fußweg Ortszentrum:</b> ", df$ortszentru_num, " m<br>", 
+    "<b>log(Bodenrichtwert):</b> ", round(df$brw_log, 2), "<br>",
+    "<b>Bodenrichtwert:</b> ", df$brw, " €/m²<br>",
+    "<b>Anteil Verkehrsfläche im Viertel:</b> ", round(df$anteil_vf_sv, 2), " %<br>",
+    "<b>Anteil Grünfläche im Viertel:</b> ", round(df$anteil_gf_sv, 2), " %<br>"
+  )
+}
+
+daten_normal$popup_text <- erstelle_popup_html(daten_normal)
+daten_ausreisser$popup_text <- erstelle_popup_html(daten_ausreisser)
+
+
+# ==============================================================================
+# 5. KARTE BAUEN UND SPEICHERN
+# ==============================================================================
+cat("5. Zeichne Karte...\n")
+
+karte_ausreisser_detail <- leaflet(options = leafletOptions(preferCanvas = TRUE)) %>%
+  setView(lng = 11.5761, lat = 48.1371, zoom = 12) %>%
+  addProviderTiles("CartoDB.Positron") %>%
+  
+  # Hintergrundflächen (Wohnlagen)
+  addPolygons(
+    data = wohnlagen_muc_wgs,
+    fillColor = ~color,
+    fillOpacity = 0.4,
+    color = "black",
+    weight = 0.5,
+    label = ~as.character(Wohnlage)
+  ) %>%
+  
+  # Linien (Grenzen)
+  addPolylines(
+    data = wohnlage_grenzen_wgs, 
+    color = "black", 
+    weight = 0.5
+  ) %>%
+  
+  # NORMALE PUNKTE (Normale Größe, schwarzer Rand)
+  addCircleMarkers(
+    data = daten_normal,
+    fillColor = ~color,       
+    fillOpacity = 1,
+    color = "black",          
+    stroke = TRUE,
+    weight = 1,
+    radius = 4,               
+    popup = ~popup_text,
+    group = "Normale Punkte"
+  ) %>%
+  
+  # AUSREISSER PUNKTE (Größer, dicker roter Rand)
+  addCircleMarkers(
+    data = daten_ausreisser,
+    fillColor = ~color,       
+    fillOpacity = 1,
+    color = "red",            
+    stroke = TRUE,
+    weight = 3,               
+    radius = 7,               
+    popup = ~popup_text,
+    group = "Ausreißer (Inseln)"
+  ) %>%
+  
+  # Legende
+  addLegend(
+    position = "bottomright",
+    colors = unname(wohnlage_farben), 
+    labels = names(wohnlage_farben),
+    title = "Vorhersage & Hintergrund",
+    opacity = 1
+  ) %>%
+  
+  # Ebenen-Steuerung
+  addLayersControl(
+    overlayGroups = c("Ausreißer (Inseln)", "Normale Punkte"),
+    options = layersControlOptions(collapsed = FALSE)
+  )
+
+# Karte anzeigen
+print(karte_ausreisser_detail)
+
+# Speichern
+if (!dir.exists("interaktive_karten")) dir.create("interaktive_karten")
+saveWidget(karte_ausreisser_detail, file = "interaktive_karten/karte_raum_ausreisser_detail.html", selfcontained = TRUE)
+
+cat("✓ Erfolgreich gespeichert unter: interaktive_karten/karte_raum_ausreisser_detail.html\n")
+
+
+
+
+
+
+
+
+
+# ==============================================================================
+# SPATIAL HETEROGENEITY (Lokale Mischzonen / Flickenteppiche erkennen)
+# ==============================================================================
+
+library(sf)
+library(dplyr)
+library(leaflet)
+library(htmlwidgets)
+
+cat("Berechne lokale Heterogenität (Mix-Score)...\n")
+
+# 1. Datenbasis: Alle Vorhersagen aus dem GAM-Modell
+# (Wir nutzen wieder die bestehenden Daten aus deinem Skript)
+alle_vorhersagen <- rbind(
+  fehler_model_gam_kombiniert_wgs %>% select(Wohnlage_vorhersage, color),
+  korrekt_model_gam_kombiniert_wgs %>% select(Wohnlage_vorhersage, color)
+)
+
+# 2. In metrisches System (UTM) umwandeln für exakte Distanzen
+alle_vorhersagen_utm <- st_transform(alle_vorhersagen, 25832)
+
+# 3. Radius definieren
+such_radius_meter <- 150
+nachbarn_liste <- st_is_within_distance(alle_vorhersagen_utm, dist = such_radius_meter)
+
+# 4. Mix-Score berechnen
+cat("Analysiere Nachbarschaften...\n")
+
+heterogenitaets_daten <- lapply(seq_along(nachbarn_liste), function(i) {
+  
+  nachbar_indices <- nachbarn_liste[[i]]
+  
+  # Wenn der Punkt quasi alleine steht, gibt es keine Heterogenität
+  if(length(nachbar_indices) < 3) {
+    return(data.frame(Mix_Score = 0, Dominanz_Prozent = 100, Anzahl_Klassen = 1))
+  }
+  
+  # Alle vorhergesagten Klassen im Umkreis sammeln
+  nachbar_klassen <- as.character(alle_vorhersagen_utm$Wohnlage_vorhersage[nachbar_indices])
+  
+  # Wie viele unterschiedliche Klassen gibt es hier?
+  anzahl_klassen <- length(unique(nachbar_klassen))
+  
+  # Wie stark ist die häufigste Klasse? (Dominanz)
+  häufigkeiten <- sort(table(nachbar_klassen), decreasing = TRUE)
+  dominante_klasse_anteil <- max(häufigkeiten) / length(nachbar_klassen)
+  
+  # Unser Mix-Score: 1 minus Dominanz. 
+  # (0 = Alle sind gleich. 0.6 = Nur 40% sind gleich, extrem gemischt!)
+  mix_score <- 1 - dominante_klasse_anteil
+  
+  return(data.frame(
+    Mix_Score = mix_score, 
+    Dominanz_Prozent = round(dominante_klasse_anteil * 100, 1),
+    Anzahl_Klassen = anzahl_klassen
+  ))
+})
+
+# Die berechneten Werte als Spalten an unseren Datensatz hängen
+heterogenitaets_df <- bind_rows(heterogenitaets_daten)
+alle_vorhersagen_wgs <- st_transform(alle_vorhersagen_utm, 4326)
+alle_vorhersagen_wgs <- bind_cols(alle_vorhersagen_wgs, heterogenitaets_df)
+
+# ==============================================================================
+# 5. DIE HETEROGENITÄTS-KARTE BAUEN
+# ==============================================================================
+
+cat("Zeichne die Heterogenitäts-Karte...\n")
+
+# Farbpalette: Weiß/Gelb (Homogen) bis tiefes Blutrot (Flickenteppich/Sehr gemischt)
+pal_mix <- colorNumeric(
+  palette = "YlOrRd", 
+  domain = alle_vorhersagen_wgs$Mix_Score
+)
+
+karte_mischzonen <- leaflet(options = leafletOptions(preferCanvas = TRUE)) %>%
+  setView(lng = 11.5761, lat = 48.1371, zoom = 12) %>%
+  addProviderTiles("CartoDB.Positron") %>%
+  
+  # Hintergrundflächen (Wohnlagen)
+  addPolygons(
+    data = wohnlagen_muc_wgs,
+    fillColor = ~color,
+    fillOpacity = 0.3,   # Etwas blasser, damit Punkte besser wirken
+    color = "black",
+    weight = 0.5,
+    label = ~as.character(Wohnlage)
+  ) %>%
+  
+  # Linien (Grenzen)
+  addPolylines(
+    data = wohnlage_grenzen_wgs, 
+    color = "black", 
+    weight = 0.5
+  ) %>%
+  
+  # Die berechneten Punkte
+  addCircleMarkers(
+    data = alle_vorhersagen_wgs,
+    fillColor = ~pal_mix(Mix_Score),
+    fillOpacity = 0.8,
+    color = "black",   # Dünner Rand für Kontrast
+    stroke = TRUE,
+    weight = 0.5,
+    radius = 4,
+    
+    # Das Popup verrät uns exakt, was an diesem Punkt los ist
+    popup = ~paste0(
+      "<b>Mischzonen-Analyse (", such_radius_meter, "m Radius)</b><br><hr>",
+      "<b>Mix-Score:</b> ", round(Mix_Score, 2), " (Je höher, desto bunter)<br>",
+      "<b>Verschiedene Klassen im Umkreis:</b> ", Anzahl_Klassen, " Stück<br>",
+      "<b>Dominanz der stärksten Klasse:</b> ", Dominanz_Prozent, " %<br><br>",
+      "<i>Eigene Vorhersage hier: ", Wohnlage_vorhersage, "</i>"
+    )
+  ) %>%
+  
+  # Legende
+  addLegend(
+    position = "bottomright",
+    pal = pal_mix,
+    values = alle_vorhersagen_wgs$Mix_Score,
+    title = "Flickenteppich-Score<br>(0 = Homogen, >0.5 = Stark Gemischt)",
+    opacity = 1
+  )
+
+# Karte anzeigen und Speichern
+print(karte_mischzonen)
+
+if (!dir.exists("interaktive_karten")) dir.create("interaktive_karten")
+saveWidget(karte_mischzonen, file = "interaktive_karten/karte_mischzonen.html", selfcontained = TRUE)
+
+cat("Erfolgreich gespeichert unter: interaktive_karten/karte_mischzonen.html\n")
