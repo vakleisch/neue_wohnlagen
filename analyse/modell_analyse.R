@@ -61,7 +61,7 @@ evaluate_confusion_matrix_equal_priors(model_gam_ausserhalb_b,
                                        test_data = model_data_complete_ausserhalb,
                                        y_col = "wohnlage_ebene")
 
-# Partielle Effekte:
+# Partielle Effekte (ALT):
 # Wie verändert sich Vorhersage bei Änderung eines Prädiktors,
 # wenn alle anderen konstant gehalten werden?
 # y-Achse: log odds gegenüber referenzkategorie (durchschnittliche Lage)
@@ -69,11 +69,67 @@ visualize_part_effects(model_gam_zentral, "part_eff", subfolder_name = "part_eff
 visualize_part_effects(model_gam_ausserhalb_b, "part_eff", subfolder_name = "part_effects_aus_b")
 
 
+# Effekte linear
+visualize_linear_effects_sicher(
+  model = model_linear_ausserhalb_b, 
+  file_name_prefix = "part_eff_lin", 
+  subfolder_name = "part_effs_lin_aus",
+  klassen_labels = c("durchschnittliche Lage", "gute Lage", "beste Lage")
+)
 
+visualize_linear_effects_sicher(
+  model = model_linear_zentral, 
+  file_name_prefix = "part_eff_lin", 
+  subfolder_name = "part_effs_lin_zentral",
+  klassen_labels = c("zentrale durchschnittliche Lage", 
+                     "zentrale gute Lage", "zentrale beste Lage")
+)
 
+visualize_logodds_effects(
+  model = model_linear_ausserhalb_b, 
+  file_name_prefix = "logodds_lin", 
+  subfolder_name = "logodds_lin_aus",
+  klassen_labels = c("durchschnittliche Lage", "gute Lage", "beste Lage")
+)
 
+visualize_logodds_effects(
+  model = model_linear_zentral, 
+  file_name_prefix = "logodds_lin", 
+  subfolder_name = "logodds_lin_zentral",
+  klassen_labels = c("zentrale durchschnittliche Lage", 
+                     "zentrale gute Lage", "zentrale beste Lage")
+)
 
+# NEU: Nicht lineare Effekte schöner visualisiert
+visualize_gam_probabilities(
+  model = model_gam_zentral, 
+  file_name_prefix = "prob_gam", 
+  subfolder_name = "neu_part_effs_gam_zentral_probs",
+  klassen_labels = c("zentrale durchschnittliche Lage", 
+                     "zentrale gute Lage", "zentrale beste Lage")
+)
 
+visualize_gam_probabilities(
+  model = model_gam_ausserhalb_b, 
+  file_name_prefix = "prob_gam", 
+  subfolder_name = "neu_part_effs_gam_aus_probs",
+  klassen_labels = c("durchschnittliche Lage", "gute Lage", "beste Lage")
+)
+
+visualize_gam_logodds(
+  model = model_gam_ausserhalb_b, 
+  file_name_prefix = "logodds_gam", 
+  subfolder_name = "neu_part_effs_gam_aus_logodds",
+  klassen_labels = c("durchschnittliche Lage", "gute Lage", "beste Lage")
+)
+
+visualize_gam_logodds(
+  model = model_gam_zentral, 
+  file_name_prefix = "logodds_gam", 
+  subfolder_name = "neu_part_effs_gam_zentral_logodds",
+  klassen_labels = c("zentrale durchschnittliche Lage", 
+                     "zentrale gute Lage", "zentrale beste Lage")
+)
 
 
 

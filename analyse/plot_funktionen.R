@@ -13,6 +13,9 @@ library(confintr)
 library(rcompanion)
 library(forcats)
 library(stringr)
+library(ggeffects)
+
+
 
 
 # visualize_part_effects
@@ -101,7 +104,414 @@ visualize_part_effects <- function(model, file_name_prefix, subfolder_name) {
 }
 
 
-# Odds Eatio Funktion
+#Effekte für die linearen Modelle (als Wahrscheinlichkeiten)
+# NEU: Das Argument 'klassen_labels' hinzugefügt
+visualize_linear_effects_sicher <- function(model, file_name_prefix, subfolder_name, klassen_labels) {
+  
+  folder_path <- file.path("plots", subfolder_name)
+  if (!dir.exists(folder_path)) dir.create(folder_path, recursive = TRUE)
+  
+  daten <- model$model
+  ziel_var <- names(daten)[1]
+  
+  variablen_namen <- setdiff(names(daten), ziel_var)
+  variablen_namen <- variablen_namen[!grepl("^\\(", variablen_namen)] 
+  
+  cat("Berechne manuelle Effekte für", length(variablen_namen), "Variablen...\n")
+  
+  pdf_pfad <- file.path(folder_path, "_all_linear_effects.pdf")
+  pdf(pdf_pfad, width = 8, height = 6)
+  
+  wohnlage_farben <- c(
+    "durchschnittliche Lage"          = "#e8f5a4",
+    "gute Lage"                       = "#afe391",
+    "beste Lage"                      = "#7FCDBB",
+    "zentrale durchschnittliche Lage" = "#41B6C4",
+    "zentrale gute Lage"              = "#1f5a82",
+    "zentrale beste Lage"             = "#271352"
+  )
+  
+  get_typical <- function(x) {
+    if (is.numeric(x)) median(x, na.rm = TRUE) else names(sort(table(x), decreasing = TRUE))[1]
+  }
+  
+  base_df <- data.frame(lapply(daten, get_typical), stringsAsFactors = FALSE)
+  
+  for (var_name in variablen_namen) {
+    
+    x_label <- case_when(
+      var_name == "erreichbarkeit_gr10ha_in_metern_adr" ~ "Distanz Grünfläche (>10ha) [m]",
+      var_name == "erreichbarkeit_innenstadt_in_minuten_adr" ~ "Fahrtzeit Innenstadt (min)",
+      var_name == "erreichbarkeit_naechstehaltestelle_in_minuten_adr" ~ "Erreichbarkeit Haltestelle (min)",
+      var_name == "brw_log" ~ "log(Bodenrichtwert)",
+      var_name == "grundschul_num" ~ "Fußweg Grundschule [m]",
+      var_name == "kitakigaho_num" ~ "Fußweg Kita [m]",
+      var_name == "ortszentru_num" ~ "Fußweg Ortszentrum [m]",
+      var_name == "spielplatz_num" ~ "Fußweg Spielplatz [m]",
+      var_name == "anteil_vf_sv" ~ "Anteil Verkehrsfläche [%]",
+      var_name == "anteil_gf_sv" ~ "Anteil Grünfläche [%]",
+      TRUE ~ var_name
+    )
+    
+    if (is.numeric(daten[[var_name]])) {
+      seq_vals <- seq(min(daten[[var_name]], na.rm = TRUE), max(daten[[var_name]], na.rm = TRUE), length.out = 100)
+    } else {
+      seq_vals <- unique(na.omit(daten[[var_name]]))
+    }
+    
+    new_data <- base_df[rep(1, length(seq_vals)), , drop = FALSE]
+    new_data[[var_name]] <- seq_vals
+    
+    preds <- predict(model, newdata = new_data, type = "response")
+    
+    plot_df <- data.frame(x = seq_vals)
+    
+    # HIER IST DER FIX: Wir nutzen DEINE übergebenen Labels, nicht die 0,1,2 vom Modell!
+    for(j in seq_along(klassen_labels)) {
+      plot_df[[klassen_labels[j]]] <- preds[, j]
+    }
+    
+    plot_df_long <- pivot_longer(
+      plot_df,
+      cols = all_of(klassen_labels),
+      names_to = "Wohnlage",
+      values_to = "Wahrscheinlichkeit"
+    )
+    
+    plot_df_long$Wohnlage <- factor(plot_df_long$Wohnlage, levels = klassen_labels)
+    
+    p <- ggplot(plot_df_long, aes(x = x, y = Wahrscheinlichkeit, color = Wohnlage)) + 
+      geom_line(linewidth = 1) +
+      scale_color_manual(values = wohnlage_farben, drop = FALSE) + 
+      scale_y_continuous(labels = scales::percent_format(), limits = c(0, 1)) +
+      theme_minimal() +
+      labs(title = NULL, x = x_label, y = "Vorhergesagte Wahrscheinlichkeit") +
+      theme(
+        axis.title.x = element_text(size = 14), 
+        axis.title.y = element_text(size = 14), 
+        axis.text = element_text(size = 12),
+        legend.position = "bottom",
+        legend.title = element_text(size = 13, face = "bold"),
+        legend.text = element_text(size = 12)
+      )
+    
+    file_name <- file.path(folder_path, paste0(file_name_prefix, "_", var_name, ".png"))
+    ggsave(file_name, plot = p, width = 8, height = 6)
+    print(p)
+  }
+  
+  dev.off() 
+  cat("✓ Alle linearen Effekte erfolgreich berechnet und gespeichert!\n")
+}
+
+
+
+# Effkte für die linearen modelle: logOdds
+
+
+visualize_logodds_effects <- function(model, file_name_prefix, subfolder_name, klassen_labels) {
+  
+  folder_path <- file.path("plots", subfolder_name)
+  if (!dir.exists(folder_path)) dir.create(folder_path, recursive = TRUE)
+  
+  daten <- model$model
+  ziel_var <- names(daten)[1]
+  
+  variablen_namen <- setdiff(names(daten), ziel_var)
+  variablen_namen <- variablen_namen[!grepl("^\\(", variablen_namen)] 
+  
+  cat("Berechne lineare Log-Odds für", length(variablen_namen), "Variablen...\n")
+  
+  pdf_pfad <- file.path(folder_path, "_all_logodds_effects.pdf")
+  pdf(pdf_pfad, width = 8, height = 6)
+  
+  wohnlage_farben <- c(
+    "durchschnittliche Lage"          = "#e8f5a4",
+    "gute Lage"                       = "#afe391",
+    "beste Lage"                      = "#7FCDBB",
+    "zentrale durchschnittliche Lage" = "#41B6C4",
+    "zentrale gute Lage"              = "#1f5a82",
+    "zentrale beste Lage"             = "#271352"
+  )
+  
+  get_typical <- function(x) {
+    if (is.numeric(x)) median(x, na.rm = TRUE) else names(sort(table(x), decreasing = TRUE))[1]
+  }
+  
+  base_df <- data.frame(lapply(daten, get_typical), stringsAsFactors = FALSE)
+  
+  for (var_name in variablen_namen) {
+    
+    x_label <- case_when(
+      var_name == "erreichbarkeit_gr10ha_in_metern_adr" ~ "Distanz Grünfläche (>10ha) [m]",
+      var_name == "erreichbarkeit_innenstadt_in_minuten_adr" ~ "Fahrtzeit Innenstadt (min)",
+      var_name == "erreichbarkeit_naechstehaltestelle_in_minuten_adr" ~ "Erreichbarkeit Haltestelle (min)",
+      var_name == "brw_log" ~ "log(Bodenrichtwert)",
+      var_name == "grundschul_num" ~ "Fußweg Grundschule [m]",
+      var_name == "kitakigaho_num" ~ "Fußweg Kita [m]",
+      var_name == "ortszentru_num" ~ "Fußweg Ortszentrum [m]",
+      var_name == "spielplatz_num" ~ "Fußweg Spielplatz [m]",
+      var_name == "anteil_vf_sv" ~ "Anteil Verkehrsfläche [%]",
+      var_name == "anteil_gf_sv" ~ "Anteil Grünfläche [%]",
+      TRUE ~ var_name
+    )
+    
+    if (is.numeric(daten[[var_name]])) {
+      seq_vals <- seq(min(daten[[var_name]], na.rm = TRUE), max(daten[[var_name]], na.rm = TRUE), length.out = 100)
+    } else {
+      seq_vals <- unique(na.omit(daten[[var_name]]))
+    }
+    
+    new_data <- base_df[rep(1, length(seq_vals)), , drop = FALSE]
+    new_data[[var_name]] <- seq_vals
+    
+  
+    #type = "link" zieht die nackten, linearen Log-Odds!
+    # mgcv gibt hier bei 3 Kategorien nur 2 Spalten zurück (Vergleich zur Referenz)
+    # ==========================================================================
+    preds <- predict(model, newdata = new_data, type = "link")
+    
+    plot_df <- data.frame(x = seq_vals)
+    
+    
+    # Referenzklasse bekommt fest die Null, der Rest die Linien
+    
+    plot_df[[klassen_labels[1]]] <- 0           # Referenzklasse (flache Linie bei 0)
+    plot_df[[klassen_labels[2]]] <- preds[, 1]  # Vergleich Klasse 2 vs Referenz
+    plot_df[[klassen_labels[3]]] <- preds[, 2]  # Vergleich Klasse 3 vs Referenz
+    
+    plot_df_long <- pivot_longer(
+      plot_df,
+      cols = all_of(klassen_labels),
+      names_to = "Wohnlage",
+      values_to = "Log_Odds"
+    )
+    
+    plot_df_long$Wohnlage <- factor(plot_df_long$Wohnlage, levels = klassen_labels)
+    
+    
+    # Y-Achse angepasst (keine Prozente mehr)
+    p <- ggplot(plot_df_long, aes(x = x, y = Log_Odds, color = Wohnlage)) + 
+      geom_line(linewidth = 1) +
+      scale_color_manual(values = wohnlage_farben, drop = FALSE) + 
+      # Eine hilfslinie bei 0 (unsere Referenz) ziehen:
+      geom_hline(yintercept = 0, linetype = "dashed", color = "black", alpha = 0.5) +
+      theme_minimal() +
+      labs(
+        title = NULL, 
+        x = x_label, 
+        y = paste("Log-Odds (Relativ zu:", klassen_labels[1], ")")
+      ) +
+      theme(
+        axis.title.x = element_text(size = 14), 
+        axis.title.y = element_text(size = 12), 
+        axis.text = element_text(size = 12),
+        legend.position = "bottom",
+        legend.title = element_text(size = 13, face = "bold"),
+        legend.text = element_text(size = 12)
+      )
+    
+    file_name <- file.path(folder_path, paste0(file_name_prefix, "_", var_name, ".png"))
+    ggsave(file_name, plot = p, width = 8, height = 6)
+    print(p)
+  }
+  
+  dev.off() 
+  cat("✓ Alle linearen Log-Odds erfolgreich geplottet!\n")
+}
+
+
+# Überarbeitete Effektfunktionen für die nicht linearen modelle (gams)
+
+# WAHRSCHEINLICHKEITEN (0% bis 100%) FÜR GAMs
+visualize_gam_probabilities <- function(model, file_name_prefix, subfolder_name, klassen_labels) {
+  
+  folder_path <- file.path("plots", subfolder_name)
+  if (!dir.exists(folder_path)) dir.create(folder_path, recursive = TRUE)
+  
+  daten <- model$model
+  ziel_var <- names(daten)[1]
+  variablen_namen <- setdiff(names(daten), ziel_var)
+  variablen_namen <- variablen_namen[!grepl("^\\(", variablen_namen)] 
+  
+  cat("Berechne GAM-Wahrscheinlichkeiten für", length(variablen_namen), "Variablen...\n")
+  
+  pdf_pfad <- file.path(folder_path, "_all_gam_probabilities.pdf")
+  pdf(pdf_pfad, width = 8, height = 6)
+  
+  wohnlage_farben <- c(
+    "durchschnittliche Lage"          = "#e8f5a4",
+    "gute Lage"                       = "#afe391",
+    "beste Lage"                      = "#7FCDBB",
+    "zentrale durchschnittliche Lage" = "#41B6C4",
+    "zentrale gute Lage"              = "#1f5a82",
+    "zentrale beste Lage"             = "#271352"
+  )
+  
+  get_typical <- function(x) {
+    if (is.numeric(x)) median(x, na.rm = TRUE) else names(sort(table(x), decreasing = TRUE))[1]
+  }
+  base_df <- data.frame(lapply(daten, get_typical), stringsAsFactors = FALSE)
+  
+  for (var_name in variablen_namen) {
+    
+    x_label <- case_when(
+      var_name == "erreichbarkeit_gr10ha_in_metern_adr" ~ "Distanz Grünfläche (>10ha) [m]",
+      var_name == "erreichbarkeit_innenstadt_in_minuten_adr" ~ "Fahrtzeit Innenstadt (min)",
+      var_name == "erreichbarkeit_naechstehaltestelle_in_minuten_adr" ~ "Erreichbarkeit Haltestelle (min)",
+      var_name == "brw_log" ~ "log(Bodenrichtwert)",
+      var_name == "grundschul_num" ~ "Fußweg Grundschule [m]",
+      var_name == "kitakigaho_num" ~ "Fußweg Kita [m]",
+      var_name == "ortszentru_num" ~ "Fußweg Ortszentrum [m]",
+      var_name == "spielplatz_num" ~ "Fußweg Spielplatz [m]",
+      var_name == "anteil_vf_sv" ~ "Anteil Verkehrsfläche [%]",
+      var_name == "anteil_gf_sv" ~ "Anteil Grünfläche [%]",
+      TRUE ~ var_name
+    )
+    
+    if (is.numeric(daten[[var_name]])) {
+      # HIER: 200 Punkte für smoothe GAM-Kurven
+      seq_vals <- seq(min(daten[[var_name]], na.rm = TRUE), max(daten[[var_name]], na.rm = TRUE), length.out = 200)
+    } else {
+      seq_vals <- unique(na.omit(daten[[var_name]]))
+    }
+    
+    new_data <- base_df[rep(1, length(seq_vals)), , drop = FALSE]
+    new_data[[var_name]] <- seq_vals
+    
+    preds <- predict(model, newdata = new_data, type = "response")
+    
+    plot_df <- data.frame(x = seq_vals)
+    for(j in seq_along(klassen_labels)) {
+      plot_df[[klassen_labels[j]]] <- preds[, j]
+    }
+    
+    plot_df_long <- pivot_longer(plot_df, cols = all_of(klassen_labels), names_to = "Wohnlage", values_to = "Wahrscheinlichkeit")
+    plot_df_long$Wohnlage <- factor(plot_df_long$Wohnlage, levels = klassen_labels)
+    
+    p <- ggplot(plot_df_long, aes(x = x, y = Wahrscheinlichkeit, color = Wohnlage)) + 
+      geom_line(linewidth = 1) +
+      scale_color_manual(values = wohnlage_farben, drop = FALSE) + 
+      scale_y_continuous(labels = scales::percent_format(), limits = c(0, 1)) +
+      theme_minimal() +
+      labs(title = NULL, x = x_label, y = "Vorhergesagte Wahrscheinlichkeit") +
+      theme(
+        axis.title.x = element_text(size = 14), 
+        axis.title.y = element_text(size = 14), 
+        axis.text = element_text(size = 12),
+        legend.position = "bottom",
+        legend.title = element_text(size = 13, face = "bold"),
+        legend.text = element_text(size = 12)
+      )
+    
+    file_name <- file.path(folder_path, paste0(file_name_prefix, "_", var_name, ".png"))
+    ggsave(file_name, plot = p, width = 8, height = 6)
+    print(p)
+  }
+  dev.off() 
+  cat("✓ GAM-Wahrscheinlichkeiten erfolgreich geplottet!\n")
+}
+
+
+
+# LINEARE PRÄDIKTOREN (LOG-ODDS) FÜR GAMs
+# (Zeigt die echten, nicht-linearen Smooth-Kurven des Modells)
+visualize_gam_logodds <- function(model, file_name_prefix, subfolder_name, klassen_labels) {
+  
+  folder_path <- file.path("plots", subfolder_name)
+  if (!dir.exists(folder_path)) dir.create(folder_path, recursive = TRUE)
+  
+  daten <- model$model
+  ziel_var <- names(daten)[1]
+  variablen_namen <- setdiff(names(daten), ziel_var)
+  variablen_namen <- variablen_namen[!grepl("^\\(", variablen_namen)] 
+  
+  cat("Berechne GAM-Log-Odds für", length(variablen_namen), "Variablen...\n")
+  
+  pdf_pfad <- file.path(folder_path, "_all_gam_logodds.pdf")
+  pdf(pdf_pfad, width = 8, height = 6)
+  
+  wohnlage_farben <- c(
+    "durchschnittliche Lage"          = "#e8f5a4",
+    "gute Lage"                       = "#afe391",
+    "beste Lage"                      = "#7FCDBB",
+    "zentrale durchschnittliche Lage" = "#41B6C4",
+    "zentrale gute Lage"              = "#1f5a82",
+    "zentrale beste Lage"             = "#271352"
+  )
+  
+  get_typical <- function(x) {
+    if (is.numeric(x)) median(x, na.rm = TRUE) else names(sort(table(x), decreasing = TRUE))[1]
+  }
+  base_df <- data.frame(lapply(daten, get_typical), stringsAsFactors = FALSE)
+  
+  for (var_name in variablen_namen) {
+    
+    x_label <- case_when(
+      var_name == "erreichbarkeit_gr10ha_in_metern_adr" ~ "Distanz Grünfläche (>10ha) [m]",
+      var_name == "erreichbarkeit_innenstadt_in_minuten_adr" ~ "Fahrtzeit Innenstadt (min)",
+      var_name == "erreichbarkeit_naechstehaltestelle_in_minuten_adr" ~ "Erreichbarkeit Haltestelle (min)",
+      var_name == "brw_log" ~ "log(Bodenrichtwert)",
+      var_name == "grundschul_num" ~ "Fußweg Grundschule [m]",
+      var_name == "kitakigaho_num" ~ "Fußweg Kita [m]",
+      var_name == "ortszentru_num" ~ "Fußweg Ortszentrum [m]",
+      var_name == "spielplatz_num" ~ "Fußweg Spielplatz [m]",
+      var_name == "anteil_vf_sv" ~ "Anteil Verkehrsfläche [%]",
+      var_name == "anteil_gf_sv" ~ "Anteil Grünfläche [%]",
+      TRUE ~ var_name
+    )
+    
+    if (is.numeric(daten[[var_name]])) {
+      seq_vals <- seq(min(daten[[var_name]], na.rm = TRUE), max(daten[[var_name]], na.rm = TRUE), length.out = 200)
+    } else {
+      seq_vals <- unique(na.omit(daten[[var_name]]))
+    }
+    
+    new_data <- base_df[rep(1, length(seq_vals)), , drop = FALSE]
+    new_data[[var_name]] <- seq_vals
+    
+    # type = "link" liefert die nackten Log-Odds der Smooth-Terme
+    preds <- predict(model, newdata = new_data, type = "link")
+    
+    plot_df <- data.frame(x = seq_vals)
+    plot_df[[klassen_labels[1]]] <- 0           # Referenzklasse (flache Linie bei 0)
+    plot_df[[klassen_labels[2]]] <- preds[, 1]  # Vergleich Klasse 2 vs Referenz
+    plot_df[[klassen_labels[3]]] <- preds[, 2]  # Vergleich Klasse 3 vs Referenz
+    
+    plot_df_long <- pivot_longer(plot_df, cols = all_of(klassen_labels), names_to = "Wohnlage", values_to = "Log_Odds")
+    plot_df_long$Wohnlage <- factor(plot_df_long$Wohnlage, levels = klassen_labels)
+    
+    p <- ggplot(plot_df_long, aes(x = x, y = Log_Odds, color = Wohnlage)) + 
+      geom_line(linewidth = 1) +
+      scale_color_manual(values = wohnlage_farben, drop = FALSE) + 
+      geom_hline(yintercept = 0, linetype = "dashed", color = "black", alpha = 0.5) +
+      theme_minimal() +
+      labs(title = NULL, x = x_label, y = paste("Log-Odds (Relativ zu:", klassen_labels[1], ")")) +
+      theme(
+        axis.title.x = element_text(size = 14), 
+        axis.title.y = element_text(size = 12), 
+        axis.text = element_text(size = 12),
+        legend.position = "bottom",
+        legend.title = element_text(size = 13, face = "bold"),
+        legend.text = element_text(size = 12)
+      )
+    
+    file_name <- file.path(folder_path, paste0(file_name_prefix, "_", var_name, ".png"))
+    ggsave(file_name, plot = p, width = 8, height = 6)
+    print(p)
+  }
+  dev.off() 
+  cat("✓ GAM-Log-Odds erfolgreich geplottet!\n")
+}
+
+
+
+
+
+
+
+
+# Odds Ratio Funktion
 # Input: Modell, Subordnername, Dateiname, Plot Dimensionen, Schriftgröße
 # Output: Odds-Ratio Plots als .png Bilder und Data frame mit 
 # Informationen zu den Odds Ratios
