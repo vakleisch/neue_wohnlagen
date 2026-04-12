@@ -58,6 +58,9 @@ corrplot(korr_matrix_neu, method = "color", type = "upper",
          number.cex = 0.7)
 
 
+
+# Gams
+
 formula_list1b <- list(wohnlage_ebene ~ 
                         #zentraler_bereich +
                         s(erreichbarkeit_gr10ha_in_metern_adr, k=6, bs = "cr") +
@@ -154,6 +157,317 @@ gam_model_zentral <- gam(
 
 # Modell speichern
 saveRDS(gam_model_zentral, file = "modelle/gam_model_zentral.rds")
+
+
+
+
+
+#-------------------------------------------------------------------------------
+
+# Gams ohne Bodenrichtwert
+formula_list_brw1 <- list(wohnlage_ebene ~ 
+                         #zentraler_bereich +
+                         s(erreichbarkeit_gr10ha_in_metern_adr, k=6, bs = "cr") +
+                         s(erreichbarkeit_innenstadt_in_minuten_adr, k=6, bs = "cr") +
+                         s(erreichbarkeit_naechstehaltestelle_in_minuten_adr, k=6, bs = "cr") +
+                         # s(wohnbere_1_log, k=6, bs = "cr") +
+                         #   s(erreichbarkeit_u10ha_in_metern_adr, k=6) +
+                         # s(flaeche_qm_sv, k=6, bs = "cr") +
+                         # s(wohnflaeche_je_ew_adr_log, k=6, bs = "cr") +
+                         s(grundschul_num, k=6, bs = "cr") +
+                         s(kitakigaho_num, k=6, bs = "cr") +
+                         s(ortszentru_num, k=6, bs = "cr") +
+                         s(spielplatz_num, k=6, bs = "cr") +
+                         s(anteil_vf_sv, k=6, bs = "cr") +
+                         s(anteil_gf_sv, k=6, bs = "cr") #+
+                       #  s(anteil_ve_sv, k=6, bs = "cr") #+
+                       # s(anteil_beb_sv , k=6)
+                       , 
+                       ~ #zentraler_bereich +
+                         s(erreichbarkeit_gr10ha_in_metern_adr, k=6, bs = "cr") +
+                         s(erreichbarkeit_innenstadt_in_minuten_adr, k=6, bs = "cr") +
+                         s(erreichbarkeit_naechstehaltestelle_in_minuten_adr, k=6, bs = "cr") +
+                         # s(wohnbere_1_log, k=6, bs = "cr") +
+                         #   s(erreichbarkeit_u10ha_in_metern_adr, k=6) +
+                         #s(flaeche_qm_sv, k=6, bs = "cr") +
+                         #s(wohnflaeche_je_ew_adr_log, k=6, bs = "cr") +
+                         s(grundschul_num, k=6, bs = "cr") +
+                         s(kitakigaho_num, k=6, bs = "cr") +
+                         s(ortszentru_num, k=6, bs = "cr") +
+                         s(spielplatz_num, k=6, bs = "cr") +
+                         s(anteil_vf_sv, k=6, bs = "cr") +
+                         s(anteil_gf_sv, k=6, bs = "cr")# +
+                       #  s(anteil_ve_sv, k=6, bs = "cr")# +
+                       # s(anteil_beb_sv , k=6)
+)
+
+
+
+gam_model_ausserhalb_brw <- gam(
+  formula = formula_list_brw1,
+  data = model_data_complete_ausserhalb,
+  family = mgcv::multinom(K = 2), # weil 3 Kategorien
+  method = "REML", 
+  optimizer = "efs",
+  control = gam.control(trace = TRUE, keepData = FALSE), # reduziert Größe 
+)
+
+# Modell speichern
+saveRDS(gam_model_ausserhalb_brw, file = "modelle/gam_model_ausserhalb_ohne_brw.rds")
+
+
+formula_list_brw2 <- list(
+  wohnlage_ebene ~ 
+    s(erreichbarkeit_gr10ha_in_metern_adr, k=5, bs="cr") +
+    s(erreichbarkeit_innenstadt_in_minuten_adr, k=5, bs="cr") +
+    s(erreichbarkeit_naechstehaltestelle_in_minuten_adr, k=5, bs="cr") +
+    #   s(wohnbere_1_log, k=5, bs = "cr") +
+    #  s(flaeche_qm_sv, k=5, bs="cr") +
+    #  s(wohnflaeche_je_ew_adr_log, k=5, bs="cr") +
+    s(grundschul_num, k=5, bs = "cr") +
+    s(kitakigaho_num, k=5, bs = "cr") +
+    s(ortszentru_num, k=5, bs = "cr") +
+    s(spielplatz_num, k=5, bs = "cr") +
+    s(anteil_vf_sv, k=5, bs="cr") +
+    s(anteil_gf_sv, k=5, bs="cr"),
+  ~ 
+    s(erreichbarkeit_gr10ha_in_metern_adr, k=5, bs="cr") +
+    s(erreichbarkeit_innenstadt_in_minuten_adr, k=5, bs="cr") +
+    s(erreichbarkeit_naechstehaltestelle_in_minuten_adr, k=5, bs="cr") +
+    #  s(wohnbere_1_log, k=5, bs = "cr") +
+    #  s(flaeche_qm_sv, k=5, bs="cr") +
+    # s(wohnflaeche_je_ew_adr_log, k=5, bs="cr") +
+    s(grundschul_num, k=5, bs = "cr") +
+    s(kitakigaho_num, k=5, bs = "cr") +
+    s(ortszentru_num, k=5, bs = "cr") +
+    s(spielplatz_num, k=5, bs = "cr") +
+    s(anteil_vf_sv, k=5, bs="cr") +
+    s(anteil_gf_sv, k=5, bs="cr")
+)
+
+
+gam_model_zentral_brw <- gam(
+  formula = formula_list_brw2,
+  data = model_data_complete_zentral,
+  family = mgcv::multinom(K = 2), # weil 3 Kategorien
+  method = "REML", 
+  optimizer = "efs",
+  control = gam.control(trace = TRUE, keepData = FALSE), # reduziert Größe 
+)
+
+# Modell speichern
+saveRDS(gam_model_zentral_brw, file = "modelle/gam_model_zentral_ohne_brw.rds")
+
+#-------------------------------------------------------------------------------
+
+
+
+
+
+#-------------------------------------------------------------------------------
+
+# Gams ohne Bodenrichtwert & mit weniger Flexibilität
+formula_list_brw3 <- list(wohnlage_ebene ~ 
+                            #zentraler_bereich +
+                            s(erreichbarkeit_gr10ha_in_metern_adr, k=3, bs = "cr") +
+                            s(erreichbarkeit_innenstadt_in_minuten_adr, k=3, bs = "cr") +
+                            s(erreichbarkeit_naechstehaltestelle_in_minuten_adr, k=3, bs = "cr") +
+                            # s(wohnbere_1_log, k=6, bs = "cr") +
+                            #   s(erreichbarkeit_u10ha_in_metern_adr, k=6) +
+                            # s(flaeche_qm_sv, k=6, bs = "cr") +
+                            # s(wohnflaeche_je_ew_adr_log, k=6, bs = "cr") +
+                            s(grundschul_num, k=3, bs = "cr") +
+                            s(kitakigaho_num, k=3, bs = "cr") +
+                            s(ortszentru_num, k=3, bs = "cr") +
+                            s(spielplatz_num, k=3, bs = "cr") +
+                            s(anteil_vf_sv, k=3, bs = "cr") +
+                            s(anteil_gf_sv, k=3, bs = "cr") #+
+                          #  s(anteil_ve_sv, k=6, bs = "cr") #+
+                          # s(anteil_beb_sv , k=6)
+                          , 
+                          ~ #zentraler_bereich +
+                            s(erreichbarkeit_gr10ha_in_metern_adr, k=3, bs = "cr") +
+                            s(erreichbarkeit_innenstadt_in_minuten_adr, k=3, bs = "cr") +
+                            s(erreichbarkeit_naechstehaltestelle_in_minuten_adr, k=3, bs = "cr") +
+                            # s(wohnbere_1_log, k=6, bs = "cr") +
+                            #   s(erreichbarkeit_u10ha_in_metern_adr, k=6) +
+                            #s(flaeche_qm_sv, k=6, bs = "cr") +
+                            #s(wohnflaeche_je_ew_adr_log, k=6, bs = "cr") +
+                            s(grundschul_num, k=3, bs = "cr") +
+                            s(kitakigaho_num, k=3, bs = "cr") +
+                            s(ortszentru_num, k=3, bs = "cr") +
+                            s(spielplatz_num, k=3, bs = "cr") +
+                            s(anteil_vf_sv, k=3, bs = "cr") +
+                            s(anteil_gf_sv, k=3, bs = "cr")# +
+                          #  s(anteil_ve_sv, k=6, bs = "cr")# +
+                          # s(anteil_beb_sv , k=6)
+)
+
+
+
+gam_model_ausserhalb_brw_less <- gam(
+  formula = formula_list_brw3,
+  data = model_data_complete_ausserhalb,
+  family = mgcv::multinom(K = 2), # weil 3 Kategorien
+  method = "REML", 
+  optimizer = "efs",
+  control = gam.control(trace = TRUE, keepData = FALSE), # reduziert Größe 
+)
+
+# Modell speichern
+saveRDS(gam_model_ausserhalb_brw_less, file = "modelle/gam_model_ausserhalb_ohne_brw_less.rds")
+
+
+formula_list_brw4 <- list(
+  wohnlage_ebene ~ 
+    s(erreichbarkeit_gr10ha_in_metern_adr, k=3, bs="cr") +
+    s(erreichbarkeit_innenstadt_in_minuten_adr, k=3, bs="cr") +
+    s(erreichbarkeit_naechstehaltestelle_in_minuten_adr, k=3, bs="cr") +
+    #   s(wohnbere_1_log, k=5, bs = "cr") +
+    #  s(flaeche_qm_sv, k=5, bs="cr") +
+    #  s(wohnflaeche_je_ew_adr_log, k=5, bs="cr") +
+    s(grundschul_num, k=3, bs = "cr") +
+    s(kitakigaho_num, k=3, bs = "cr") +
+    s(ortszentru_num, k=3, bs = "cr") +
+    s(spielplatz_num, k=3, bs = "cr") +
+    s(anteil_vf_sv, k=3, bs="cr") +
+    s(anteil_gf_sv, k=3, bs="cr"),
+  ~ 
+    s(erreichbarkeit_gr10ha_in_metern_adr, k=3, bs="cr") +
+    s(erreichbarkeit_innenstadt_in_minuten_adr, k=3, bs="cr") +
+    s(erreichbarkeit_naechstehaltestelle_in_minuten_adr, k=3, bs="cr") +
+    #  s(wohnbere_1_log, k=5, bs = "cr") +
+    #  s(flaeche_qm_sv, k=5, bs="cr") +
+    # s(wohnflaeche_je_ew_adr_log, k=5, bs="cr") +
+    s(grundschul_num, k=3, bs = "cr") +
+    s(kitakigaho_num, k=3, bs = "cr") +
+    s(ortszentru_num, k=3, bs = "cr") +
+    s(spielplatz_num, k=3, bs = "cr") +
+    s(anteil_vf_sv, k=3, bs="cr") +
+    s(anteil_gf_sv, k=3, bs="cr")
+)
+
+
+gam_model_zentral_brw_less <- gam(
+  formula = formula_list_brw4,
+  data = model_data_complete_zentral,
+  family = mgcv::multinom(K = 2), # weil 3 Kategorien
+  method = "REML", 
+  optimizer = "efs",
+  control = gam.control(trace = TRUE, keepData = FALSE), # reduziert Größe 
+)
+
+# Modell speichern
+saveRDS(gam_model_zentral_brw_less, file = "modelle/gam_model_zentral_ohne_brw_less.rds")
+
+#-------------------------------------------------------------------------------
+
+
+
+
+
+#-------------------------------------------------------------------------------
+
+# Gams mit weniger Flexibilität
+formula_list_less1 <- list(wohnlage_ebene ~ 
+                            #zentraler_bereich +
+                            s(erreichbarkeit_gr10ha_in_metern_adr, k=3, bs = "cr") +
+                            s(erreichbarkeit_innenstadt_in_minuten_adr, k=3, bs = "cr") +
+                            s(erreichbarkeit_naechstehaltestelle_in_minuten_adr, k=3, bs = "cr") +
+                            # s(wohnbere_1_log, k=6, bs = "cr") +
+                            #   s(erreichbarkeit_u10ha_in_metern_adr, k=6) +
+                            # s(flaeche_qm_sv, k=6, bs = "cr") +
+                            # s(wohnflaeche_je_ew_adr_log, k=6, bs = "cr") +
+                            s(grundschul_num, k=3, bs = "cr") +
+                            s(kitakigaho_num, k=3, bs = "cr") +
+                            s(ortszentru_num, k=3, bs = "cr") +
+                            s(spielplatz_num, k=3, bs = "cr") +
+                            s(brw_log, k=3, bs = "cr")+
+                            s(anteil_vf_sv, k=3, bs = "cr") +
+                            s(anteil_gf_sv, k=3, bs = "cr") #+
+                          #  s(anteil_ve_sv, k=6, bs = "cr") #+
+                          # s(anteil_beb_sv , k=6)
+                          , 
+                          ~ #zentraler_bereich +
+                            s(erreichbarkeit_gr10ha_in_metern_adr, k=3, bs = "cr") +
+                            s(erreichbarkeit_innenstadt_in_minuten_adr, k=3, bs = "cr") +
+                            s(erreichbarkeit_naechstehaltestelle_in_minuten_adr, k=3, bs = "cr") +
+                            # s(wohnbere_1_log, k=6, bs = "cr") +
+                            #   s(erreichbarkeit_u10ha_in_metern_adr, k=6) +
+                            #s(flaeche_qm_sv, k=6, bs = "cr") +
+                            #s(wohnflaeche_je_ew_adr_log, k=6, bs = "cr") +
+                            s(grundschul_num, k=3, bs = "cr") +
+                            s(kitakigaho_num, k=3, bs = "cr") +
+                            s(ortszentru_num, k=3, bs = "cr") +
+                            s(spielplatz_num, k=3, bs = "cr") +
+                            s(brw_log, k=3, bs = "cr")+
+                            s(anteil_vf_sv, k=3, bs = "cr") +
+                            s(anteil_gf_sv, k=3, bs = "cr")# +
+                          #  s(anteil_ve_sv, k=6, bs = "cr")# +
+                          # s(anteil_beb_sv , k=6)
+)
+
+
+
+gam_model_ausserhalb_less <- gam(
+  formula = formula_list_less1,
+  data = model_data_complete_ausserhalb,
+  family = mgcv::multinom(K = 2), # weil 3 Kategorien
+  method = "REML", 
+  optimizer = "efs",
+  control = gam.control(trace = TRUE, keepData = FALSE), # reduziert Größe 
+)
+
+# Modell speichern
+saveRDS(gam_model_ausserhalb_less, file = "modelle/gam_model_ausserhalb_less.rds")
+
+
+formula_list_less2 <- list(
+  wohnlage_ebene ~ 
+    s(erreichbarkeit_gr10ha_in_metern_adr, k=3, bs="cr") +
+    s(erreichbarkeit_innenstadt_in_minuten_adr, k=3, bs="cr") +
+    s(erreichbarkeit_naechstehaltestelle_in_minuten_adr, k=3, bs="cr") +
+    #   s(wohnbere_1_log, k=5, bs = "cr") +
+    #  s(flaeche_qm_sv, k=5, bs="cr") +
+    #  s(wohnflaeche_je_ew_adr_log, k=5, bs="cr") +
+    s(grundschul_num, k=3, bs = "cr") +
+    s(kitakigaho_num, k=3, bs = "cr") +
+    s(ortszentru_num, k=3, bs = "cr") +
+    s(spielplatz_num, k=3, bs = "cr") +
+    s(brw_log, k=3, bs = "cr")+
+    s(anteil_vf_sv, k=3, bs="cr") +
+    s(anteil_gf_sv, k=3, bs="cr"),
+  ~ 
+    s(erreichbarkeit_gr10ha_in_metern_adr, k=3, bs="cr") +
+    s(erreichbarkeit_innenstadt_in_minuten_adr, k=3, bs="cr") +
+    s(erreichbarkeit_naechstehaltestelle_in_minuten_adr, k=3, bs="cr") +
+    #  s(wohnbere_1_log, k=5, bs = "cr") +
+    #  s(flaeche_qm_sv, k=5, bs="cr") +
+    # s(wohnflaeche_je_ew_adr_log, k=5, bs="cr") +
+    s(grundschul_num, k=3, bs = "cr") +
+    s(kitakigaho_num, k=3, bs = "cr") +
+    s(ortszentru_num, k=3, bs = "cr") +
+    s(spielplatz_num, k=3, bs = "cr") +
+    s(brw_log, k=3, bs = "cr")+
+    s(anteil_vf_sv, k=3, bs="cr") +
+    s(anteil_gf_sv, k=3, bs="cr")
+)
+
+
+gam_model_zentral_less <- gam(
+  formula = formula_list_less2,
+  data = model_data_complete_zentral,
+  family = mgcv::multinom(K = 2), # weil 3 Kategorien
+  method = "REML", 
+  optimizer = "efs",
+  control = gam.control(trace = TRUE, keepData = FALSE), # reduziert Größe 
+)
+
+# Modell speichern
+saveRDS(gam_model_zentral_less, file = "modelle/gam_model_zentral_less.rds")
+
+#-------------------------------------------------------------------------------
+
 
 
 # Lineare Modelle

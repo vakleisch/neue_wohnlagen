@@ -27,6 +27,18 @@ model_linear_zentral <- readRDS("modelle/linear_model_zentral.rds")
 
 model_linear_ausserhalb_b <- readRDS("modelle/linear_model_ausserhalb_b.rds")
 
+model_gam_zentral_brw <- readRDS("modelle/gam_model_zentral_ohne_brw.rds")
+
+model_gam_ausserhalb_brw <- readRDS("modelle/gam_model_ausserhalb_ohne_brw.rds")
+
+model_gam_zentral_brw_less <- readRDS("modelle/gam_model_zentral_ohne_brw_less.rds")
+
+model_gam_ausserhalb_brw_less <- readRDS("modelle/gam_model_ausserhalb_ohne_brw_less.rds")
+
+model_gam_zentral_less <- readRDS("modelle/gam_model_zentral_less.rds")
+
+model_gam_ausserhalb_less <- readRDS("modelle/gam_model_ausserhalb_less.rds")
+
 # Modelloutput ansehen
 summary(model_gam_zentral)
 summary(model_gam_ausserhalb_b)
@@ -36,21 +48,44 @@ summary(model_linear_ausserhalb_b)
 # Modellgüte evaluieren
 evaluate_confusion_matrix(model_gam_zentral, 
                           test_data = model_data_complete_zentral,
-                          y_col = "wohnlage_ebene")
+                          y_col = "wohnlage_ebene") # 82% accuracy
 
                       
 evaluate_confusion_matrix(model_gam_ausserhalb_b, 
                           test_data = model_data_complete_ausserhalb,
-                          y_col = "wohnlage_ebene")
+                          y_col = "wohnlage_ebene") # 73% accuracy
 
 evaluate_confusion_matrix(model_linear_zentral, 
                           test_data = model_data_complete_zentral,
-                          y_col = "wohnlage_ebene")
-
+                          y_col = "wohnlage_ebene") #73% accuracy
 
 evaluate_confusion_matrix(model_linear_ausserhalb_b, 
                           test_data = model_data_complete_ausserhalb,
-                          y_col = "wohnlage_ebene")
+                          y_col = "wohnlage_ebene") # 59% accuracy
+
+evaluate_confusion_matrix(model_gam_ausserhalb_brw,
+                          test_data = model_data_complete_ausserhalb,
+                          y_col = "wohnlage_ebene") # 63% accuracy
+
+evaluate_confusion_matrix(model_gam_zentral_brw,
+                          test_data = model_data_complete_zentral,
+                          y_col = "wohnlage_ebene") # 78% accuracy
+
+evaluate_confusion_matrix(model_gam_ausserhalb_brw_less,
+                          test_data = model_data_complete_ausserhalb,
+                          y_col = "wohnlage_ebene") # 60% accuracy
+
+evaluate_confusion_matrix(model_gam_zentral_brw_less,
+                          test_data = model_data_complete_zentral,
+                          y_col = "wohnlage_ebene") # 74% accuracy
+
+evaluate_confusion_matrix(model_gam_ausserhalb_less,
+                          test_data = model_data_complete_ausserhalb,
+                          y_col = "wohnlage_ebene") # 66% accuracy
+
+evaluate_confusion_matrix(model_gam_zentral_less,
+                          test_data = model_data_complete_zentral,
+                          y_col = "wohnlage_ebene") # 77% accuracy
 
 # Modellgüte evaluieren mit bereinigten Vorhersagen
 evaluate_confusion_matrix_equal_priors(model_gam_zentral, 
@@ -160,3 +195,129 @@ cat("=== KREUZTABELLE DER VORHERSAGEN ===\n")
 vergleichs_tabelle <- table(Normal = vorhersage_normal, 
                             Korrigiert = vorhersage_korrigiert)
 print(vergleichs_tabelle)
+
+
+
+
+
+
+
+# Vergleiche accuracies
+library(ggplot2)
+library(dplyr)
+library(scales)
+
+
+berechne_accuracy_explizit <- function(modell, daten, ziel_var = "wohnlage_ebene") {
+  
+  # 1. Echte Vorhersagen auf dem übergebenen Datensatz machen
+  preds <- predict(modell, newdata = daten, type = "response")
+  
+  # 2. Wahre Labels und Klassen-Level extrahieren
+  wahre_werte <- as.character(daten[[ziel_var]])
+  klassen_level <- levels(as.factor(daten[[ziel_var]]))
+  
+  # 3. Die Klasse mit der höchsten vorhergesagten Wahrscheinlichkeit ermitteln
+  # max.col findet für jede Zeile die Spalte (Klasse) mit dem höchsten Wert
+  pred_indices <- max.col(preds, ties.method = "first")
+  vorhergesagte_werte <- klassen_level[pred_indices]
+  
+  # 4. Accuracy: (Anzahl Treffer) / (Anzahl aller Beobachtungen)
+  accuracy <- sum(wahre_werte == vorhergesagte_werte) / length(wahre_werte)
+  
+  return(accuracy)
+}
+
+
+acc_zentral <- data.frame(
+  Modell_Name = c(
+    "GAM (Vollständig)", 
+    "Linear (Vollständig)", 
+    "GAM (ohne BRW)", 
+    "GAM (reduziert)", 
+    "GAM (ohne BRW & reduziert)"
+  ),
+  Accuracy = c(
+    berechne_accuracy_explizit(model_gam_zentral, model_data_complete_zentral),
+    berechne_accuracy_explizit(model_linear_zentral, model_data_complete_zentral),
+    berechne_accuracy_explizit(model_gam_zentral_brw, model_data_complete_zentral),
+    berechne_accuracy_explizit(model_gam_zentral_less, model_data_complete_zentral),
+    berechne_accuracy_explizit(model_gam_zentral_brw_less, model_data_complete_zentral)
+  ),
+  Typ = c("GAM-Hauptmodell", "Lineares Modell", "GAM-Variante", "GAM-Variante", "GAM-Variante")
+)
+
+
+acc_ausserhalb <- data.frame(
+  Modell_Name = c(
+    "GAM (Vollständig)", 
+    "Linear (Vollständig)", 
+    "GAM (ohne BRW)", 
+    "GAM (reduziert)", 
+    "GAM (ohne BRW & reduziert)"
+  ),
+  Accuracy = c(
+    berechne_accuracy_explizit(model_gam_ausserhalb_b, model_data_complete_ausserhalb),
+    berechne_accuracy_explizit(model_linear_ausserhalb_b, model_data_complete_ausserhalb),
+    berechne_accuracy_explizit(model_gam_ausserhalb_brw, model_data_complete_ausserhalb),
+    berechne_accuracy_explizit(model_gam_ausserhalb_less, model_data_complete_ausserhalb),
+    berechne_accuracy_explizit(model_gam_ausserhalb_brw_less, model_data_complete_ausserhalb)
+  ),
+  Typ = c("GAM-Hauptmodell", "Lineares Modell", "GAM-Variante", "GAM-Variante", "GAM-Variante")
+)
+
+
+
+# Farbcodierung 
+farbe_typen <- c(
+  "GAM-Hauptmodell" = "#2c7bb6",    # Dunkelblau für das Hauptmodell
+  "Lineares Modell" = "#fdae61",    # Orange als lineare Baseline
+  "GAM-Variante"    = "#abd9e9"     # Hellblau für Ablations-Modelle
+)
+
+if (!dir.exists("plots/evaluation")) dir.create("plots/evaluation", recursive = TRUE)
+
+# --- PLOT ZENTRAL ---
+plot_zentral <- ggplot(acc_zentral, aes(x = reorder(Modell_Name, Accuracy), y = Accuracy, fill = Typ)) +
+  geom_bar(stat = "identity", width = 0.7, color = "black", linewidth = 0.3) +
+  coord_flip() +  
+  scale_fill_manual(values = farbe_typen) +
+  geom_text(aes(label = percent(Accuracy, accuracy = 0.1)), hjust = -0.2, size = 5) +
+  scale_y_continuous(labels = percent_format(), limits = c(0, 1), expand = expansion(mult = c(0, 0.15))) + 
+  theme_minimal(base_size = 14) +
+  labs(
+    title = "Modellvergleich: Region Zentral",
+    x = NULL, 
+    y = "Genauigkeit (Accuracy)",
+    fill = "Modell-Typ"
+  ) +
+  theme(
+    legend.position = "bottom", 
+    plot.title = element_text(face = "bold"),
+    panel.grid.major.y = element_blank()
+  )
+
+
+ggsave("plots/evaluation/accuracy_vergleich_zentral.png", plot = plot_zentral, width = 9, height = 5)
+
+# --- PLOT AUSSERHALB ---
+plot_ausserhalb <- ggplot(acc_ausserhalb, aes(x = reorder(Modell_Name, Accuracy), y = Accuracy, fill = Typ)) +
+  geom_bar(stat = "identity", width = 0.7, color = "black", linewidth = 0.3) +
+  coord_flip() +
+  scale_fill_manual(values = farbe_typen) +
+  geom_text(aes(label = percent(Accuracy, accuracy = 0.1)), hjust = -0.2, size = 5) +
+  scale_y_continuous(labels = percent_format(), limits = c(0, 1), expand = expansion(mult = c(0, 0.15))) +
+  theme_minimal(base_size = 14) +
+  labs(
+    title = "Modellvergleich: Region Ausserhalb",
+    x = NULL, 
+    y = "Genauigkeit (Accuracy)",
+    fill = "Modell-Typ"
+  ) +
+  theme(
+    legend.position = "bottom", 
+    plot.title = element_text(face = "bold"),
+    panel.grid.major.y = element_blank()
+  )
+
+ggsave("plots/evaluation/accuracy_vergleich_ausserhalb.png", plot = plot_ausserhalb, width = 9, height = 5)
