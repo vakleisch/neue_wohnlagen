@@ -1530,7 +1530,9 @@ cat("Berechne Wahrscheinlichkeiten und Popups...\n")
 fehler_brw_fuer_karte <- berechne_probs_sicher(fehler_brw_kombiniert_wgs, model_gam_zentral_brw, model_gam_ausserhalb_brw)
 korrekt_brw_fuer_karte <- berechne_probs_sicher(korrekt_brw_kombiniert_wgs, model_gam_zentral_brw, model_gam_ausserhalb_brw)
 
+
 # Leicht angepasstes Popup
+
 erstelle_popup_html_brw <- function(df) {
   paste0(
     "<b>Wahre Lage:</b> ", df$Wohnlage_wahr, "<br>",
@@ -1745,6 +1747,7 @@ erstelle_popup_html_brw_less <- function(df) {
     "<b>Fußweg Kita:</b> ", df$kitakigaho_num, " m<br>",
     "<b>Fußweg Ortszentrum:</b> ", df$ortszentru_num, " m<br>"
     )
+
 }
 
 fehler_brw_less_fuer_karte$popup_text <- erstelle_popup_html_brw_less(fehler_brw_less_fuer_karte)
@@ -1954,6 +1957,7 @@ erstelle_popup_html_less <- function(df) {
     "<b>Fußweg Spielplatz:</b> ", df$spielplatz_num, " m<br>",
     "<b>Fußweg Kita:</b> ", df$kitakigaho_num, " m<br>",
     "<b>Fußweg Ortszentrum:</b> ", df$ortszentru_num, " m<br>"
+
   )
 }
 
