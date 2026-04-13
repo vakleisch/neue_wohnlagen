@@ -18,6 +18,18 @@ model_gam_ausserhalb<- readRDS("modelle/gam_model_ausserhalb_b.rds")
 model_linear_zentral <- readRDS("modelle/linear_model_zentral.rds")
 model_linear_ausserhalb <- readRDS("modelle/linear_model_ausserhalb_b.rds")
 
+model_gam_zentral_brw <- readRDS("modelle/gam_model_zentral_ohne_brw.rds")
+
+model_gam_ausserhalb_brw <- readRDS("modelle/gam_model_ausserhalb_ohne_brw.rds")
+
+model_gam_zentral_brw_less <- readRDS("modelle/gam_model_zentral_ohne_brw_less.rds")
+
+model_gam_ausserhalb_brw_less <- readRDS("modelle/gam_model_ausserhalb_ohne_brw_less.rds")
+
+model_gam_zentral_less <- readRDS("modelle/gam_model_zentral_less.rds")
+
+model_gam_ausserhalb_less <- readRDS("modelle/gam_model_ausserhalb_less.rds")
+
 wohnlage_farben <- c(
   "durchschnittliche Lage" = "#e8f5a4",
   "gute Lage" = "#afe391",
@@ -1420,3 +1432,610 @@ if (!dir.exists("interaktive_karten")) dir.create("interaktive_karten")
 saveWidget(karte_mischzonen, file = "interaktive_karten/karte_mischzonen.html", selfcontained = TRUE)
 
 cat("Erfolgreich gespeichert unter: interaktive_karten/karte_mischzonen.html\n")
+
+
+
+
+# ==============================================================================
+# HAUPTKARTE: GAM MODELLE OHNE BODENRICHTWERT (BRW)
+# ==============================================================================
+cat("Generiere Daten für Modelle OHNE BRW...\n")
+
+# 1. Daten erstellen mit deinen Custom-Funktionen
+fehler_model_gam_zentral_brw <- missclassification_data_zentral(
+  model_gam_zentral_brw, 
+  data = model_data_complete_zentral,
+  predict_fun = predict_labels_discr
+)
+fehler_model_gam_ausserhalb_brw <- missclassification_data_ausserhalb(
+  model_gam_ausserhalb_brw, 
+  data = model_data_complete_ausserhalb,
+  predict_fun = predict_labels_discr
+)
+korrekt_model_gam_zentral_brw <- korrekte_vorhersagen_zentral(
+  model_gam_zentral_brw, 
+  data = model_data_complete_zentral,
+  predict_fun = predict_labels_discr
+)
+korrekt_model_gam_ausserhalb_brw <- korrekte_vorhersagen_ausserhalb(
+  model_gam_ausserhalb_brw, 
+  data = model_data_complete_ausserhalb,
+  predict_fun = predict_labels_discr
+)
+
+# 2. In sf Objekte umwandeln und filtern
+fehler_model_gam_zentral_brw <- st_as_sf(fehler_model_gam_zentral_brw) %>%
+  filter(wohnlage_bedeutung %in% c("zentrale durchschnittliche Lage", "zentrale gute Lage", "zentrale beste Lage"))
+fehler_model_gam_ausserhalb_brw <- st_as_sf(fehler_model_gam_ausserhalb_brw) %>%
+  filter(wohnlage_bedeutung %in% c("durchschnittliche Lage", "gute Lage", "beste Lage"))
+
+korrekt_model_gam_zentral_brw <- st_as_sf(korrekt_model_gam_zentral_brw) %>%
+  filter(wohnlage_bedeutung %in% c("zentrale durchschnittliche Lage", "zentrale gute Lage", "zentrale beste Lage"))
+korrekt_model_gam_ausserhalb_brw <- st_as_sf(korrekt_model_gam_ausserhalb_brw) %>%
+  filter(wohnlage_bedeutung %in% c("durchschnittliche Lage", "gute Lage", "beste Lage"))
+
+# 3. sf-Objekte bereinigen (mit deiner Hilfsfunktion)
+fehler_model_gam_zentral_brw <- prepare_sf_object(fehler_model_gam_zentral_brw)
+fehler_model_gam_ausserhalb_brw <- prepare_sf_object(fehler_model_gam_ausserhalb_brw)
+korrekt_model_gam_zentral_brw <- prepare_sf_object(korrekt_model_gam_zentral_brw)
+korrekt_model_gam_ausserhalb_brw <- prepare_sf_object(korrekt_model_gam_ausserhalb_brw)
+
+# 4. Levels angleichen
+levels_kombiniert <- c(
+  "durchschnittliche Lage", "gute Lage", "beste Lage",
+  "zentrale durchschnittliche Lage", "zentrale gute Lage", "zentrale beste Lage"
+)
+
+fehler_model_gam_zentral_brw$Wohnlage_vorhersage <- factor(fehler_model_gam_zentral_brw$Wohnlage_vorhersage, levels = levels_kombiniert)
+fehler_model_gam_zentral_brw$Wohnlage_wahr <- factor(fehler_model_gam_zentral_brw$Wohnlage_wahr, levels = levels_kombiniert)
+fehler_model_gam_ausserhalb_brw$Wohnlage_vorhersage <- factor(fehler_model_gam_ausserhalb_brw$Wohnlage_vorhersage, levels = levels_kombiniert)
+fehler_model_gam_ausserhalb_brw$Wohnlage_wahr <- factor(fehler_model_gam_ausserhalb_brw$Wohnlage_wahr, levels = levels_kombiniert)
+
+korrekt_model_gam_zentral_brw$Wohnlage_vorhersage <- factor(korrekt_model_gam_zentral_brw$Wohnlage_vorhersage, levels = levels_kombiniert)
+korrekt_model_gam_zentral_brw$Wohnlage_wahr <- factor(korrekt_model_gam_zentral_brw$Wohnlage_wahr, levels = levels_kombiniert)
+korrekt_model_gam_ausserhalb_brw$Wohnlage_vorhersage <- factor(korrekt_model_gam_ausserhalb_brw$Wohnlage_vorhersage, levels = levels_kombiniert)
+korrekt_model_gam_ausserhalb_brw$Wohnlage_wahr <- factor(korrekt_model_gam_ausserhalb_brw$Wohnlage_wahr, levels = levels_kombiniert)
+
+# 5. Kombinieren und nach WGS84 transformieren
+fehler_brw_kombiniert_wgs <- rbind(fehler_model_gam_zentral_brw, fehler_model_gam_ausserhalb_brw) %>% st_transform(4326)
+korrekt_brw_kombiniert_wgs <- rbind(korrekt_model_gam_zentral_brw, korrekt_model_gam_ausserhalb_brw) %>% st_transform(4326)
+
+# 6. Farbzuordnung
+fehler_brw_kombiniert_wgs <- fehler_brw_kombiniert_wgs %>% 
+  mutate(color = case_when(
+    Wohnlage_vorhersage == "durchschnittliche Lage" ~ "#e8f5a4",
+    Wohnlage_vorhersage == "gute Lage" ~ "#afe391",
+    Wohnlage_vorhersage == "beste Lage" ~ "#7FCDBB",
+    Wohnlage_vorhersage == "zentrale durchschnittliche Lage" ~ "#41B6C4",
+    Wohnlage_vorhersage == "zentrale gute Lage" ~ "#1f5a82",
+    Wohnlage_vorhersage == "zentrale beste Lage" ~ "#271352"
+  ))
+
+korrekt_brw_kombiniert_wgs <- korrekt_brw_kombiniert_wgs %>% 
+  mutate(color = case_when(
+    Wohnlage_vorhersage == "durchschnittliche Lage" ~ "#e8f5a4",
+    Wohnlage_vorhersage == "gute Lage" ~ "#afe391",
+    Wohnlage_vorhersage == "beste Lage" ~ "#7FCDBB",
+    Wohnlage_vorhersage == "zentrale durchschnittliche Lage" ~ "#41B6C4",
+    Wohnlage_vorhersage == "zentrale gute Lage" ~ "#1f5a82",
+    Wohnlage_vorhersage == "zentrale beste Lage" ~ "#271352"
+  ))
+
+# ==============================================================================
+# 7. WAHRSCHEINLICHKEITEN BERECHNEN UND POPUPS GENERIEREN
+# ==============================================================================
+cat("Berechne Wahrscheinlichkeiten und Popups...\n")
+
+# Wir nutzen deine Hilfsfunktion, übergeben aber die _brw Modelle!
+fehler_brw_fuer_karte <- berechne_probs_sicher(fehler_brw_kombiniert_wgs, model_gam_zentral_brw, model_gam_ausserhalb_brw)
+korrekt_brw_fuer_karte <- berechne_probs_sicher(korrekt_brw_kombiniert_wgs, model_gam_zentral_brw, model_gam_ausserhalb_brw)
+
+# Leicht angepasstes Popup, das deutlich macht, dass BRW ignoriert wurde
+erstelle_popup_html_brw <- function(df) {
+  paste0(
+    "<b>Wahre Lage:</b> ", df$Wohnlage_wahr, "<br>",
+    "<b>Vorhersage <span style='color:red;'>(ohne BRW)</span>:</b> ", df$Wohnlage_vorhersage, "<br>",
+    "<hr>",
+    "<b>Klassenwahrscheinlichkeiten:</b><br>",
+    "Durchschnittliche Lage: ", round(df$prob_durchschnittlich * 100, 1), " %<br>",
+    "Gute Lage: ", round(df$prob_gut * 100, 1), " %<br>",
+    "Beste Lage: ", round(df$prob_beste * 100, 1), " %<br>",
+    "<hr>",
+    "<b>Distanz Grünfläche (>10ha):</b> ", df$erreichbarkeit_gr10ha_in_metern_adr, " m<br>",
+    "<b>Fahrtzeit Innenstadt (ÖPNV):</b> ", df$erreichbarkeit_innenstadt_in_minuten_adr, " min<br>",
+    "<b>Erreichbarkeit nächste Haltestelle:</b> ", df$erreichbarkeit_naechstehaltestelle_in_minuten_adr, " min<br>",
+    "<b>Fußweg Grundschule:</b> ", df$grundschul_num, " m<br>",
+    "<b>Fußweg Spielplatz:</b> ", df$spielplatz_num, " m<br>",
+    "<b>Fußweg Kita:</b> ", df$kitakigaho_num, " m<br>",
+    "<b>Fußweg Ortszentrum:</b> ", df$ortszentru_num, " m<br>", 
+    "<hr>",
+    "<i>Die folgenden echten Werte wurden vom Modell ignoriert:</i><br>",
+    "<b>log(Bodenrichtwert):</b> ", round(df$brw_log, 2), "<br>",
+    "<b>Bodenrichtwert:</b> ", df$brw, " €/m²"
+  )
+}
+
+# (Ich nutze die kugelsichere $ Zuweisung, damit es bei sf-Objekten keine Probleme gibt)
+fehler_brw_fuer_karte$popup_text <- erstelle_popup_html_brw(fehler_brw_fuer_karte)
+korrekt_brw_fuer_karte$popup_text <- erstelle_popup_html_brw(korrekt_brw_fuer_karte)
+
+# ==============================================================================
+# 8. KARTE BAUEN UND SPEICHERN
+# ==============================================================================
+cat("Zeichne Karte...\n")
+
+punkt_groesse <- 6 
+
+karte_ohne_brw <- leaflet(options = leafletOptions(preferCanvas = TRUE)) %>%
+  setView(lng = 11.5761, lat = 48.1371, zoom = 11) %>%
+  addProviderTiles("CartoDB.Positron") %>%
+  
+  addPolygons(
+    data = wohnlagen_muc_wgs,
+    fillColor = ~color,
+    fillOpacity = 0.5,
+    color = "black",
+    weight = 0.5,
+    label = ~as.character(Wohnlage)
+  ) %>%
+  
+  addPolylines(
+    data = wohnlage_grenzen_wgs, 
+    color = "black", 
+    weight = 0.5
+  ) %>%
+  
+  # KORREKTE PUNKTE
+  addCircleMarkers(
+    data = korrekt_brw_fuer_karte,
+    fillColor = ~color,
+    fillOpacity = 1,
+    color = "black",
+    stroke = TRUE,
+    weight = 1,         
+    opacity = 1,        
+    radius = punkt_groesse,
+    popup = ~popup_text, 
+    group = "Korrekt (ohne BRW)"
+  ) %>%
+  
+  # FEHLERHAFTE PUNKTE
+  addCircleMarkers(
+    data = fehler_brw_fuer_karte,
+    fillColor = ~color,
+    fillOpacity = 1,
+    color = "red",
+    stroke = TRUE,
+    weight = 2,         
+    opacity = 1,        
+    radius = punkt_groesse,
+    popup = ~popup_text, 
+    group = "Fehler (ohne BRW)"
+  ) %>%
+  
+  addLegend(
+    position = "bottomright",
+    colors = unname(wohnlage_farben), 
+    labels = names(wohnlage_farben),
+    title = "Wohnlage (Modell ohne BRW)",
+    opacity = 1
+  ) %>%
+  
+  addLayersControl(
+    overlayGroups = c("Fehler (ohne BRW)", "Korrekt (ohne BRW)"),
+    options = layersControlOptions(collapsed = FALSE)
+  )
+
+print(karte_ohne_brw)
+
+if (!dir.exists("interaktive_karten")) dir.create("interaktive_karten")
+saveWidget(karte_ohne_brw, file = "interaktive_karten/interaktive_karte_model_werte_ohne_brw.html", selfcontained = TRUE)
+
+cat("✓ Fertig! Karte erfolgreich als 'interaktive_karte_model_werte_ohne_brw.html' gespeichert.\n")
+
+
+
+
+# ==============================================================================
+# HAUPTKARTE: GAM MODELLE MIT WENIGER KNOTEN (OHNE BRW & LESS)
+# ==============================================================================
+cat("Generiere Daten für stark reduzierte Modelle (OHNE BRW & LESS)...\n")
+
+# 1. Daten erstellen mit deinen Custom-Funktionen
+fehler_model_gam_zentral_brw_less <- missclassification_data_zentral(
+  model_gam_zentral_brw_less, 
+  data = model_data_complete_zentral,
+  predict_fun = predict_labels_discr
+)
+fehler_model_gam_ausserhalb_brw_less <- missclassification_data_ausserhalb(
+  model_gam_ausserhalb_brw_less, 
+  data = model_data_complete_ausserhalb,
+  predict_fun = predict_labels_discr
+)
+korrekt_model_gam_zentral_brw_less <- korrekte_vorhersagen_zentral(
+  model_gam_zentral_brw_less, 
+  data = model_data_complete_zentral,
+  predict_fun = predict_labels_discr
+)
+korrekt_model_gam_ausserhalb_brw_less <- korrekte_vorhersagen_ausserhalb(
+  model_gam_ausserhalb_brw_less, 
+  data = model_data_complete_ausserhalb,
+  predict_fun = predict_labels_discr
+)
+
+# 2. In sf Objekte umwandeln und filtern
+fehler_model_gam_zentral_brw_less <- st_as_sf(fehler_model_gam_zentral_brw_less) %>%
+  filter(wohnlage_bedeutung %in% c("zentrale durchschnittliche Lage", "zentrale gute Lage", "zentrale beste Lage"))
+fehler_model_gam_ausserhalb_brw_less <- st_as_sf(fehler_model_gam_ausserhalb_brw_less) %>%
+  filter(wohnlage_bedeutung %in% c("durchschnittliche Lage", "gute Lage", "beste Lage"))
+
+korrekt_model_gam_zentral_brw_less <- st_as_sf(korrekt_model_gam_zentral_brw_less) %>%
+  filter(wohnlage_bedeutung %in% c("zentrale durchschnittliche Lage", "zentrale gute Lage", "zentrale beste Lage"))
+korrekt_model_gam_ausserhalb_brw_less <- st_as_sf(korrekt_model_gam_ausserhalb_brw_less) %>%
+  filter(wohnlage_bedeutung %in% c("durchschnittliche Lage", "gute Lage", "beste Lage"))
+
+# 3. sf-Objekte bereinigen (mit deiner Hilfsfunktion)
+fehler_model_gam_zentral_brw_less <- prepare_sf_object(fehler_model_gam_zentral_brw_less)
+fehler_model_gam_ausserhalb_brw_less <- prepare_sf_object(fehler_model_gam_ausserhalb_brw_less)
+korrekt_model_gam_zentral_brw_less <- prepare_sf_object(korrekt_model_gam_zentral_brw_less)
+korrekt_model_gam_ausserhalb_brw_less <- prepare_sf_object(korrekt_model_gam_ausserhalb_brw_less)
+
+# 4. Levels angleichen
+levels_kombiniert <- c(
+  "durchschnittliche Lage", "gute Lage", "beste Lage",
+  "zentrale durchschnittliche Lage", "zentrale gute Lage", "zentrale beste Lage"
+)
+
+fehler_model_gam_zentral_brw_less$Wohnlage_vorhersage <- factor(fehler_model_gam_zentral_brw_less$Wohnlage_vorhersage, levels = levels_kombiniert)
+fehler_model_gam_zentral_brw_less$Wohnlage_wahr <- factor(fehler_model_gam_zentral_brw_less$Wohnlage_wahr, levels = levels_kombiniert)
+fehler_model_gam_ausserhalb_brw_less$Wohnlage_vorhersage <- factor(fehler_model_gam_ausserhalb_brw_less$Wohnlage_vorhersage, levels = levels_kombiniert)
+fehler_model_gam_ausserhalb_brw_less$Wohnlage_wahr <- factor(fehler_model_gam_ausserhalb_brw_less$Wohnlage_wahr, levels = levels_kombiniert)
+
+korrekt_model_gam_zentral_brw_less$Wohnlage_vorhersage <- factor(korrekt_model_gam_zentral_brw_less$Wohnlage_vorhersage, levels = levels_kombiniert)
+korrekt_model_gam_zentral_brw_less$Wohnlage_wahr <- factor(korrekt_model_gam_zentral_brw_less$Wohnlage_wahr, levels = levels_kombiniert)
+korrekt_model_gam_ausserhalb_brw_less$Wohnlage_vorhersage <- factor(korrekt_model_gam_ausserhalb_brw_less$Wohnlage_vorhersage, levels = levels_kombiniert)
+korrekt_model_gam_ausserhalb_brw_less$Wohnlage_wahr <- factor(korrekt_model_gam_ausserhalb_brw_less$Wohnlage_wahr, levels = levels_kombiniert)
+
+# 5. Kombinieren und nach WGS84 transformieren
+fehler_brw_less_kombiniert_wgs <- rbind(fehler_model_gam_zentral_brw_less, fehler_model_gam_ausserhalb_brw_less) %>% st_transform(4326)
+korrekt_brw_less_kombiniert_wgs <- rbind(korrekt_model_gam_zentral_brw_less, korrekt_model_gam_ausserhalb_brw_less) %>% st_transform(4326)
+
+# 6. Farbzuordnung
+fehler_brw_less_kombiniert_wgs <- fehler_brw_less_kombiniert_wgs %>% 
+  mutate(color = case_when(
+    Wohnlage_vorhersage == "durchschnittliche Lage" ~ "#e8f5a4",
+    Wohnlage_vorhersage == "gute Lage" ~ "#afe391",
+    Wohnlage_vorhersage == "beste Lage" ~ "#7FCDBB",
+    Wohnlage_vorhersage == "zentrale durchschnittliche Lage" ~ "#41B6C4",
+    Wohnlage_vorhersage == "zentrale gute Lage" ~ "#1f5a82",
+    Wohnlage_vorhersage == "zentrale beste Lage" ~ "#271352"
+  ))
+
+korrekt_brw_less_kombiniert_wgs <- korrekt_brw_less_kombiniert_wgs %>% 
+  mutate(color = case_when(
+    Wohnlage_vorhersage == "durchschnittliche Lage" ~ "#e8f5a4",
+    Wohnlage_vorhersage == "gute Lage" ~ "#afe391",
+    Wohnlage_vorhersage == "beste Lage" ~ "#7FCDBB",
+    Wohnlage_vorhersage == "zentrale durchschnittliche Lage" ~ "#41B6C4",
+    Wohnlage_vorhersage == "zentrale gute Lage" ~ "#1f5a82",
+    Wohnlage_vorhersage == "zentrale beste Lage" ~ "#271352"
+  ))
+
+# ==============================================================================
+# 7. WAHRSCHEINLICHKEITEN BERECHNEN UND POPUPS GENERIEREN
+# ==============================================================================
+cat("Berechne Wahrscheinlichkeiten und Popups...\n")
+
+# Wahrscheinlichkeiten ziehen (wir übergeben die _brw_less Modelle)
+fehler_brw_less_fuer_karte <- berechne_probs_sicher(fehler_brw_less_kombiniert_wgs, model_gam_zentral_brw_less, model_gam_ausserhalb_brw_less)
+korrekt_brw_less_fuer_karte <- berechne_probs_sicher(korrekt_brw_less_kombiniert_wgs, model_gam_zentral_brw_less, model_gam_ausserhalb_brw_less)
+
+# Spezielles Popup für die stark reduzierte Variante
+erstelle_popup_html_brw_less <- function(df) {
+  paste0(
+    "<b>Wahre Lage:</b> ", df$Wohnlage_wahr, "<br>",
+    "<b>Vorhersage <span style='color:red;'>(stark reduziert)</span>:</b> ", df$Wohnlage_vorhersage, "<br>",
+    "<hr>",
+    "<b>Klassenwahrscheinlichkeiten:</b><br>",
+    "Durchschnittliche Lage: ", round(df$prob_durchschnittlich * 100, 1), " %<br>",
+    "Gute Lage: ", round(df$prob_gut * 100, 1), " %<br>",
+    "Beste Lage: ", round(df$prob_beste * 100, 1), " %<br>",
+    "<hr>",
+    "<b>Distanz Grünfläche (>10ha):</b> ", df$erreichbarkeit_gr10ha_in_metern_adr, " m<br>",
+    "<b>Fahrtzeit Innenstadt (ÖPNV):</b> ", df$erreichbarkeit_innenstadt_in_minuten_adr, " min<br>",
+    "<b>Erreichbarkeit nächste Haltestelle:</b> ", df$erreichbarkeit_naechstehaltestelle_in_minuten_adr, " min<br>",
+    "<hr>",
+    "<i>Dieses Modell ist extrem vereinfacht und ignoriert u.a. diese Werte:</i><br>",
+    "<b>log(Bodenrichtwert):</b> ", round(df$brw_log, 2), "<br>",
+    "<b>Bodenrichtwert:</b> ", df$brw, " €/m²"
+  )
+}
+
+fehler_brw_less_fuer_karte$popup_text <- erstelle_popup_html_brw_less(fehler_brw_less_fuer_karte)
+korrekt_brw_less_fuer_karte$popup_text <- erstelle_popup_html_brw_less(korrekt_brw_less_fuer_karte)
+
+# ==============================================================================
+# 8. KARTE BAUEN UND SPEICHERN
+# ==============================================================================
+cat("Zeichne Karte...\n")
+
+punkt_groesse <- 6 
+
+karte_ohne_brw_less <- leaflet(options = leafletOptions(preferCanvas = TRUE)) %>%
+  setView(lng = 11.5761, lat = 48.1371, zoom = 11) %>%
+  addProviderTiles("CartoDB.Positron") %>%
+  
+  addPolygons(
+    data = wohnlagen_muc_wgs,
+    fillColor = ~color,
+    fillOpacity = 0.5,
+    color = "black",
+    weight = 0.5,
+    label = ~as.character(Wohnlage)
+  ) %>%
+  
+  addPolylines(
+    data = wohnlage_grenzen_wgs, 
+    color = "black", 
+    weight = 0.5
+  ) %>%
+  
+  # KORREKTE PUNKTE
+  addCircleMarkers(
+    data = korrekt_brw_less_fuer_karte,
+    fillColor = ~color,
+    fillOpacity = 1,
+    color = "black",
+    stroke = TRUE,
+    weight = 1,         
+    opacity = 1,        
+    radius = punkt_groesse,
+    popup = ~popup_text, 
+    group = "Korrekt (Reduziert)"
+  ) %>%
+  
+  # FEHLERHAFTE PUNKTE
+  addCircleMarkers(
+    data = fehler_brw_less_fuer_karte,
+    fillColor = ~color,
+    fillOpacity = 1,
+    color = "red",
+    stroke = TRUE,
+    weight = 2,         
+    opacity = 1,        
+    radius = punkt_groesse,
+    popup = ~popup_text, 
+    group = "Fehler (Reduziert)"
+  ) %>%
+  
+  addLegend(
+    position = "bottomright",
+    colors = unname(wohnlage_farben), 
+    labels = names(wohnlage_farben),
+    title = "Vorhersage (Stark Reduziert)",
+    opacity = 1
+  ) %>%
+  
+  addLayersControl(
+    overlayGroups = c("Fehler (Reduziert)", "Korrekt (Reduziert)"),
+    options = layersControlOptions(collapsed = FALSE)
+  )
+
+print(karte_ohne_brw_less)
+
+if (!dir.exists("interaktive_karten")) dir.create("interaktive_karten")
+saveWidget(karte_ohne_brw_less, file = "interaktive_karten/interaktive_karte_model_werte_ohne_brw_less.html", selfcontained = TRUE)
+
+cat("✓ Fertig! Karte erfolgreich als 'interaktive_karte_model_werte_ohne_brw_less.html' gespeichert.\n")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ==============================================================================
+# HAUPTKARTE: GAM MODELLE REDUZIERT (LESS)
+# ==============================================================================
+cat("Generiere Daten für reduzierte Modelle (LESS)...\n")
+
+# 1. Daten erstellen mit deinen Custom-Funktionen
+fehler_model_gam_zentral_less <- missclassification_data_zentral(
+  model_gam_zentral_less, 
+  data = model_data_complete_zentral,
+  predict_fun = predict_labels_discr
+)
+fehler_model_gam_ausserhalb_less <- missclassification_data_ausserhalb(
+  model_gam_ausserhalb_less, 
+  data = model_data_complete_ausserhalb,
+  predict_fun = predict_labels_discr
+)
+korrekt_model_gam_zentral_less <- korrekte_vorhersagen_zentral(
+  model_gam_zentral_less, 
+  data = model_data_complete_zentral,
+  predict_fun = predict_labels_discr
+)
+korrekt_model_gam_ausserhalb_less <- korrekte_vorhersagen_ausserhalb(
+  model_gam_ausserhalb_less, 
+  data = model_data_complete_ausserhalb,
+  predict_fun = predict_labels_discr
+)
+
+# 2. In sf Objekte umwandeln und filtern
+fehler_model_gam_zentral_less <- st_as_sf(fehler_model_gam_zentral_less) %>%
+  filter(wohnlage_bedeutung %in% c("zentrale durchschnittliche Lage", "zentrale gute Lage", "zentrale beste Lage"))
+fehler_model_gam_ausserhalb_less <- st_as_sf(fehler_model_gam_ausserhalb_less) %>%
+  filter(wohnlage_bedeutung %in% c("durchschnittliche Lage", "gute Lage", "beste Lage"))
+
+korrekt_model_gam_zentral_less <- st_as_sf(korrekt_model_gam_zentral_less) %>%
+  filter(wohnlage_bedeutung %in% c("zentrale durchschnittliche Lage", "zentrale gute Lage", "zentrale beste Lage"))
+korrekt_model_gam_ausserhalb_less <- st_as_sf(korrekt_model_gam_ausserhalb_less) %>%
+  filter(wohnlage_bedeutung %in% c("durchschnittliche Lage", "gute Lage", "beste Lage"))
+
+# 3. sf-Objekte bereinigen (mit deiner Hilfsfunktion)
+fehler_model_gam_zentral_less <- prepare_sf_object(fehler_model_gam_zentral_less)
+fehler_model_gam_ausserhalb_less <- prepare_sf_object(fehler_model_gam_ausserhalb_less)
+korrekt_model_gam_zentral_less <- prepare_sf_object(korrekt_model_gam_zentral_less)
+korrekt_model_gam_ausserhalb_less <- prepare_sf_object(korrekt_model_gam_ausserhalb_less)
+
+# 4. Levels angleichen
+levels_kombiniert <- c(
+  "durchschnittliche Lage", "gute Lage", "beste Lage",
+  "zentrale durchschnittliche Lage", "zentrale gute Lage", "zentrale beste Lage"
+)
+
+fehler_model_gam_zentral_less$Wohnlage_vorhersage <- factor(fehler_model_gam_zentral_less$Wohnlage_vorhersage, levels = levels_kombiniert)
+fehler_model_gam_zentral_less$Wohnlage_wahr <- factor(fehler_model_gam_zentral_less$Wohnlage_wahr, levels = levels_kombiniert)
+fehler_model_gam_ausserhalb_less$Wohnlage_vorhersage <- factor(fehler_model_gam_ausserhalb_less$Wohnlage_vorhersage, levels = levels_kombiniert)
+fehler_model_gam_ausserhalb_less$Wohnlage_wahr <- factor(fehler_model_gam_ausserhalb_less$Wohnlage_wahr, levels = levels_kombiniert)
+
+korrekt_model_gam_zentral_less$Wohnlage_vorhersage <- factor(korrekt_model_gam_zentral_less$Wohnlage_vorhersage, levels = levels_kombiniert)
+korrekt_model_gam_zentral_less$Wohnlage_wahr <- factor(korrekt_model_gam_zentral_less$Wohnlage_wahr, levels = levels_kombiniert)
+korrekt_model_gam_ausserhalb_less$Wohnlage_vorhersage <- factor(korrekt_model_gam_ausserhalb_less$Wohnlage_vorhersage, levels = levels_kombiniert)
+korrekt_model_gam_ausserhalb_less$Wohnlage_wahr <- factor(korrekt_model_gam_ausserhalb_less$Wohnlage_wahr, levels = levels_kombiniert)
+
+# 5. Kombinieren und nach WGS84 transformieren
+fehler_less_kombiniert_wgs <- rbind(fehler_model_gam_zentral_less, fehler_model_gam_ausserhalb_less) %>% st_transform(4326)
+korrekt_less_kombiniert_wgs <- rbind(korrekt_model_gam_zentral_less, korrekt_model_gam_ausserhalb_less) %>% st_transform(4326)
+
+# 6. Farbzuordnung
+fehler_less_kombiniert_wgs <- fehler_less_kombiniert_wgs %>% 
+  mutate(color = case_when(
+    Wohnlage_vorhersage == "durchschnittliche Lage" ~ "#e8f5a4",
+    Wohnlage_vorhersage == "gute Lage" ~ "#afe391",
+    Wohnlage_vorhersage == "beste Lage" ~ "#7FCDBB",
+    Wohnlage_vorhersage == "zentrale durchschnittliche Lage" ~ "#41B6C4",
+    Wohnlage_vorhersage == "zentrale gute Lage" ~ "#1f5a82",
+    Wohnlage_vorhersage == "zentrale beste Lage" ~ "#271352"
+  ))
+
+korrekt_less_kombiniert_wgs <- korrekt_less_kombiniert_wgs %>% 
+  mutate(color = case_when(
+    Wohnlage_vorhersage == "durchschnittliche Lage" ~ "#e8f5a4",
+    Wohnlage_vorhersage == "gute Lage" ~ "#afe391",
+    Wohnlage_vorhersage == "beste Lage" ~ "#7FCDBB",
+    Wohnlage_vorhersage == "zentrale durchschnittliche Lage" ~ "#41B6C4",
+    Wohnlage_vorhersage == "zentrale gute Lage" ~ "#1f5a82",
+    Wohnlage_vorhersage == "zentrale beste Lage" ~ "#271352"
+  ))
+
+# ==============================================================================
+# 7. WAHRSCHEINLICHKEITEN BERECHNEN UND POPUPS GENERIEREN
+# ==============================================================================
+cat("Berechne Wahrscheinlichkeiten und Popups...\n")
+
+# Wahrscheinlichkeiten ziehen (wir übergeben die _less Modelle)
+fehler_less_fuer_karte <- berechne_probs_sicher(fehler_less_kombiniert_wgs, model_gam_zentral_less, model_gam_ausserhalb_less)
+korrekt_less_fuer_karte <- berechne_probs_sicher(korrekt_less_kombiniert_wgs, model_gam_zentral_less, model_gam_ausserhalb_less)
+
+# Spezielles Popup für die "less" Variante
+erstelle_popup_html_less <- function(df) {
+  paste0(
+    "<b>Wahre Lage:</b> ", df$Wohnlage_wahr, "<br>",
+    "<b>Vorhersage <span style='color:orange;'>(reduziert)</span>:</b> ", df$Wohnlage_vorhersage, "<br>",
+    "<hr>",
+    "<b>Klassenwahrscheinlichkeiten:</b><br>",
+    "Durchschnittliche Lage: ", round(df$prob_durchschnittlich * 100, 1), " %<br>",
+    "Gute Lage: ", round(df$prob_gut * 100, 1), " %<br>",
+    "Beste Lage: ", round(df$prob_beste * 100, 1), " %<br>",
+    "<hr>",
+    "<i>Die Eckdaten des Standorts:</i><br>",
+    "<b>log(Bodenrichtwert):</b> ", round(df$brw_log, 2), "<br>",
+    "<b>Bodenrichtwert:</b> ", df$brw, " €/m²<br>",
+    "<b>Distanz Grünfläche (>10ha):</b> ", df$erreichbarkeit_gr10ha_in_metern_adr, " m<br>",
+    "<b>Fahrtzeit Innenstadt (ÖPNV):</b> ", df$erreichbarkeit_innenstadt_in_minuten_adr, " min<br>",
+    "<b>Erreichbarkeit nächste Haltestelle:</b> ", df$erreichbarkeit_naechstehaltestelle_in_minuten_adr, " min<br>",
+    "<b>Fußweg Grundschule:</b> ", df$grundschul_num, " m<br>",
+    "<b>Fußweg Spielplatz:</b> ", df$spielplatz_num, " m<br>",
+    "<b>Fußweg Kita:</b> ", df$kitakigaho_num, " m<br>",
+    "<b>Fußweg Ortszentrum:</b> ", df$ortszentru_num, " m<br>",
+    "<hr>",
+    "<i>Hinweis: Dieses Modell ('less') nutzt einen reduzierten Variablensatz für die Vorhersage. Einige dieser angezeigten Werte wurden eventuell vom Modell ignoriert.</i>"
+  )
+}
+
+fehler_less_fuer_karte$popup_text <- erstelle_popup_html_less(fehler_less_fuer_karte)
+korrekt_less_fuer_karte$popup_text <- erstelle_popup_html_less(korrekt_less_fuer_karte)
+
+# ==============================================================================
+# 8. KARTE BAUEN UND SPEICHERN
+# ==============================================================================
+cat("Zeichne Karte...\n")
+
+punkt_groesse <- 6 
+
+karte_less <- leaflet(options = leafletOptions(preferCanvas = TRUE)) %>%
+  setView(lng = 11.5761, lat = 48.1371, zoom = 11) %>%
+  addProviderTiles("CartoDB.Positron") %>%
+  
+  addPolygons(
+    data = wohnlagen_muc_wgs,
+    fillColor = ~color,
+    fillOpacity = 0.5,
+    color = "black",
+    weight = 0.5,
+    label = ~as.character(Wohnlage)
+  ) %>%
+  
+  addPolylines(
+    data = wohnlage_grenzen_wgs, 
+    color = "black", 
+    weight = 0.5
+  ) %>%
+  
+  # KORREKTE PUNKTE
+  addCircleMarkers(
+    data = korrekt_less_fuer_karte,
+    fillColor = ~color,
+    fillOpacity = 1,
+    color = "black",
+    stroke = TRUE,
+    weight = 1,         
+    opacity = 1,        
+    radius = punkt_groesse,
+    popup = ~popup_text, 
+    group = "Korrekt (Less)"
+  ) %>%
+  
+  # FEHLERHAFTE PUNKTE
+  addCircleMarkers(
+    data = fehler_less_fuer_karte,
+    fillColor = ~color,
+    fillOpacity = 1,
+    color = "red",
+    stroke = TRUE,
+    weight = 2,         
+    opacity = 1,        
+    radius = punkt_groesse,
+    popup = ~popup_text, 
+    group = "Fehler (Less)"
+  ) %>%
+  
+  addLegend(
+    position = "bottomright",
+    colors = unname(wohnlage_farben), 
+    labels = names(wohnlage_farben),
+    title = "Vorhersage (Reduziertes Modell)",
+    opacity = 1
+  ) %>%
+  
+  addLayersControl(
+    overlayGroups = c("Fehler (Less)", "Korrekt (Less)"),
+    options = layersControlOptions(collapsed = FALSE)
+  )
+
+print(karte_less)
+
+if (!dir.exists("interaktive_karten")) dir.create("interaktive_karten")
+saveWidget(karte_less, file = "interaktive_karten/interaktive_karte_model_werte_less.html", selfcontained = TRUE)
+
+cat("✓ Fertig! Karte erfolgreich als 'interaktive_karte_model_werte_less.html' gespeichert.\n")
