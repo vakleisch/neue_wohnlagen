@@ -549,3 +549,84 @@ linear_model_zentral <- gam(
 
 # Modell speichern
 saveRDS(linear_model_zentral, file = "modelle/linear_model_zentral.rds")
+
+
+
+# Random Forest Modell
+# ==============================================================================
+# RANDOM FOREST MODELLE (mlr3 + ranger)
+# ==============================================================================
+
+library(sf)
+library(dplyr)
+library(mlr3)
+library(mlr3learners) 
+library(ranger)       
+
+
+
+# 1. Feature-Auswahl
+features <- c(
+  "erreichbarkeit_gr10ha_in_metern_adr",
+  "erreichbarkeit_innenstadt_in_minuten_adr",
+  "erreichbarkeit_naechstehaltestelle_in_minuten_adr",
+ # "brw_log",
+  "grundschul_num",
+  "kitakigaho_num",
+  "ortszentru_num",
+  "spielplatz_num",
+  "anteil_vf_sv",
+  "anteil_gf_sv"
+)
+
+# 2. Datenvorbereitung
+# WICHTIG: mlr3 (und ranger) können mit räumlichen Geometrien (sf-Objekten) 
+# nichts anfangen. Wir müssen die Daten auf ein reines Dataframe reduzieren.
+
+
+rf_data_ausserhalb <- model_data_complete_ausserhalb %>%
+  st_drop_geometry() %>%
+  select(wohnlage_ebene, all_of(features)) %>%
+  # mlr3 verlangt, dass Klassifikations-Ziele Faktoren sind
+  mutate(wohnlage_ebene = as.factor(wohnlage_ebene)) 
+
+rf_data_zentral <- model_data_complete_zentral %>%
+  st_drop_geometry() %>%
+  select(wohnlage_ebene, all_of(features)) %>%
+  mutate(wohnlage_ebene = as.factor(wohnlage_ebene))
+
+# 3. Tasks in mlr3 erstellen (Die "Aufgabenbeschreibung" für den Algorithmus)
+task_ausserhalb <- as_task_classif(rf_data_ausserhalb, target = "wohnlage_ebene", id = "rf_ausserhalb")
+task_zentral <- as_task_classif(rf_data_zentral, target = "wohnlage_ebene", id = "rf_zentral")
+
+# 4. Den Learner (Modell-Typ) definieren
+# predict_type = "prob" ist essenziell, damit wir später Wahrscheinlichkeiten (0-100%) bekommen!
+# importance = "permutation" berechnet später, wie wichtig jede Variable war.
+learner_rf <- lrn("classif.ranger", 
+                  predict_type = "prob", 
+                  num.trees = 500,           # 500 Bäume sind der Standard
+                  importance = "permutation") 
+
+# ==============================================================================
+# 5. MODELL 'AUSSERHALB' TRAINIEREN & SPEICHERN
+# ==============================================================================
+
+
+# Klonen des Learners stellt sicher, dass er komplett "leer" ins Training geht
+model_rf_ausserhalb <- learner_rf$clone()$train(task_ausserhalb)
+
+# Speichern
+if (!dir.exists("modelle")) dir.create("modelle")
+saveRDS(model_rf_ausserhalb, file = "modelle/rf_model_ausserhalb.rds")
+cat("Random Forest 'Ausserhalb' gespeichert unter: modelle/rf_model_ausserhalb.rds\n")
+
+# ==============================================================================
+# 6. MODELL 'ZENTRAL' TRAINIEREN & SPEICHERN
+# ==============================================================================
+
+model_rf_zentral <- learner_rf$clone()$train(task_zentral)
+
+# Speichern
+saveRDS(model_rf_zentral, file = "modelle/rf_model_zentral.rds")
+cat("Random Forest 'Zentral' gespeichert unter: modelle/rf_model_zentral.rds\n")
+

@@ -39,6 +39,10 @@ model_gam_zentral_less <- readRDS("modelle/gam_model_zentral_less.rds")
 
 model_gam_ausserhalb_less <- readRDS("modelle/gam_model_ausserhalb_less.rds")
 
+model_rf_ausserhalb <- readRDS("modelle/rf_model_ausserhalb.rds")
+
+model_rf_zentral <- readRDS("modelle/rf_model_zentral.rds")
+
 # Modelloutput ansehen
 summary(model_gam_zentral)
 summary(model_gam_ausserhalb_b)
@@ -86,6 +90,55 @@ evaluate_confusion_matrix(model_gam_ausserhalb_less,
 evaluate_confusion_matrix(model_gam_zentral_less,
                           test_data = model_data_complete_zentral,
                           y_col = "wohnlage_ebene") # 77% accuracy
+
+# Random Forest Modelle (accuracy extrem hoch!)
+pred_rf_zentral <- model_rf_zentral$predict_newdata(model_data_complete_zentral)
+
+print(pred_rf_zentral$confusion)
+acc <- pred_rf_zentral$score(msr("classif.acc"))
+cat("Accuracy:", acc, "\n")
+
+pred_rf_ausserhalb <- model_rf_ausserhalb$predict_newdata(model_data_complete_ausserhalb)
+
+print(pred_rf_zentral$confusion)
+acc <- pred_rf_zentral$score(msr("classif.acc"))
+cat("Accuracy:", acc, "\n")
+
+
+# Importance für das zentrale Modell ziehen
+importance_df <- as.data.frame(model_rf_zentral$importance())
+colnames(importance_df) <- "Wichtigkeit"
+importance_df$Feature <- rownames(importance_df)
+
+# Plotten
+ggplot(importance_df, aes(x = reorder(Feature, Wichtigkeit), y = Wichtigkeit)) +
+  geom_col(fill = "#2c7bb6", color = "black") +
+  coord_flip() +
+  theme_minimal() +
+  labs(
+    title = "Was treibt den Random Forest an? (Zentral)",
+    subtitle = "Permutation Feature Importance",
+    x = "Variable",
+    y = "Wichtigkeit (Abfall der Accuracy ohne dieses Feature)"
+  )
+
+
+# Importance für das Modell ausserhalb ziehen
+importance_df <- as.data.frame(model_rf_ausserhalb$importance())
+colnames(importance_df) <- "Wichtigkeit"
+importance_df$Feature <- rownames(importance_df)
+
+# Plotten
+ggplot(importance_df, aes(x = reorder(Feature, Wichtigkeit), y = Wichtigkeit)) +
+  geom_col(fill = "#2c7bb6", color = "black") +
+  coord_flip() +
+  theme_minimal() +
+  labs(
+    title = "Was treibt den Random Forest an? (Ausserhalb)",
+    subtitle = "Permutation Feature Importance",
+    x = "Variable",
+    y = "Wichtigkeit (Abfall der Accuracy ohne dieses Feature)"
+  )
 
 # Modellgüte evaluieren mit bereinigten Vorhersagen
 evaluate_confusion_matrix_equal_priors(model_gam_zentral, 
@@ -166,6 +219,101 @@ visualize_gam_logodds(
                      "zentrale gute Lage", "zentrale beste Lage")
 )
 
+
+
+# GAM ohne Bodenrichtwert:
+visualize_gam_probabilities(
+  model = model_gam_zentral_brw, 
+  file_name_prefix = "prob_gam", 
+  subfolder_name = "neu_part_effs_gam_zentral_brw_probs",
+  klassen_labels = c("zentrale durchschnittliche Lage", 
+                     "zentrale gute Lage", "zentrale beste Lage")
+)
+
+visualize_gam_probabilities(
+  model = model_gam_ausserhalb_brw, 
+  file_name_prefix = "prob_gam", 
+  subfolder_name = "neu_part_effs_gam_aus_brw_probs",
+  klassen_labels = c("durchschnittliche Lage", "gute Lage", "beste Lage")
+)
+
+visualize_gam_logodds(
+  model = model_gam_ausserhalb_brw, 
+  file_name_prefix = "logodds_gam", 
+  subfolder_name = "neu_part_effs_gam_aus_brw_logodds",
+  klassen_labels = c("durchschnittliche Lage", "gute Lage", "beste Lage")
+)
+
+visualize_gam_logodds(
+  model = model_gam_zentral_brw, 
+  file_name_prefix = "logodds_gam", 
+  subfolder_name = "neu_part_effs_gam_zentral_brw_logodds",
+  klassen_labels = c("zentrale durchschnittliche Lage", 
+                     "zentrale gute Lage", "zentrale beste Lage")
+)
+
+
+# GAM ohne Bodenrichtwert und weniger Knoten:
+visualize_gam_probabilities(
+  model = model_gam_zentral_brw_less, 
+  file_name_prefix = "prob_gam", 
+  subfolder_name = "neu_part_effs_gam_zentral_brw_less_probs",
+  klassen_labels = c("zentrale durchschnittliche Lage", 
+                     "zentrale gute Lage", "zentrale beste Lage")
+)
+
+visualize_gam_probabilities(
+  model = model_gam_ausserhalb_brw_less, 
+  file_name_prefix = "prob_gam", 
+  subfolder_name = "neu_part_effs_gam_aus_brw_less_probs",
+  klassen_labels = c("durchschnittliche Lage", "gute Lage", "beste Lage")
+)
+
+visualize_gam_logodds(
+  model = model_gam_ausserhalb_brw_less, 
+  file_name_prefix = "logodds_gam", 
+  subfolder_name = "neu_part_effs_gam_aus_brw_less_logodds",
+  klassen_labels = c("durchschnittliche Lage", "gute Lage", "beste Lage")
+)
+
+visualize_gam_logodds(
+  model = model_gam_zentral_brw_less, 
+  file_name_prefix = "logodds_gam", 
+  subfolder_name = "neu_part_effs_gam_zentral_brw_less_logodds",
+  klassen_labels = c("zentrale durchschnittliche Lage", 
+                     "zentrale gute Lage", "zentrale beste Lage")
+)
+
+# GAM mit weniger Knoten:
+visualize_gam_probabilities(
+  model = model_gam_zentral_less, 
+  file_name_prefix = "prob_gam", 
+  subfolder_name = "neu_part_effs_gam_zentral_brw_less_probs",
+  klassen_labels = c("zentrale durchschnittliche Lage", 
+                     "zentrale gute Lage", "zentrale beste Lage")
+)
+
+visualize_gam_probabilities(
+  model = model_gam_ausserhalb_less, 
+  file_name_prefix = "prob_gam", 
+  subfolder_name = "neu_part_effs_gam_aus_brw_less_probs",
+  klassen_labels = c("durchschnittliche Lage", "gute Lage", "beste Lage")
+)
+
+visualize_gam_logodds(
+  model = model_gam_ausserhalb_less, 
+  file_name_prefix = "logodds_gam", 
+  subfolder_name = "neu_part_effs_gam_aus_brw_less_logodds",
+  klassen_labels = c("durchschnittliche Lage", "gute Lage", "beste Lage")
+)
+
+visualize_gam_logodds(
+  model = model_gam_zentral_less, 
+  file_name_prefix = "logodds_gam", 
+  subfolder_name = "neu_part_effs_gam_zentral_brw_less_logodds",
+  klassen_labels = c("zentrale durchschnittliche Lage", 
+                     "zentrale gute Lage", "zentrale beste Lage")
+)
 
 
 # Sind predict_labels und predict_labels_discr identisch? 

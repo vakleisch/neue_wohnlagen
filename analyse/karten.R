@@ -1732,7 +1732,7 @@ korrekt_brw_less_fuer_karte <- berechne_probs_sicher(korrekt_brw_less_kombiniert
 erstelle_popup_html_brw_less <- function(df) {
   paste0(
     "<b>Wahre Lage:</b> ", df$Wohnlage_wahr, "<br>",
-    "<b>Vorhersage <span style='color:red;'>(stark reduziert)</span>:</b> ", df$Wohnlage_vorhersage, "<br>",
+    "<b>Vorhersage <span style='color:red;'>(weniger Knoten)</span>:</b> ", df$Wohnlage_vorhersage, "<br>",
     "<hr>",
     "<b>Klassenwahrscheinlichkeiten:</b><br>",
     "Durchschnittliche Lage: ", round(df$prob_durchschnittlich * 100, 1), " %<br>",
@@ -1811,7 +1811,7 @@ karte_ohne_brw_less <- leaflet(options = leafletOptions(preferCanvas = TRUE)) %>
     position = "bottomright",
     colors = unname(wohnlage_farben), 
     labels = names(wohnlage_farben),
-    title = "Vorhersage (Stark Reduziert)",
+    title = "Vorhersage (Weniger Knoten)",
     opacity = 1
   ) %>%
   
@@ -1940,7 +1940,7 @@ korrekt_less_fuer_karte <- berechne_probs_sicher(korrekt_less_kombiniert_wgs, mo
 erstelle_popup_html_less <- function(df) {
   paste0(
     "<b>Wahre Lage:</b> ", df$Wohnlage_wahr, "<br>",
-    "<b>Vorhersage <span style='color:orange;'>(reduziert)</span>:</b> ", df$Wohnlage_vorhersage, "<br>",
+    "<b>Vorhersage <span style='color:red;'>(weniger Knoten)</span>:</b> ", df$Wohnlage_vorhersage, "<br>",
     "<hr>",
     "<b>Klassenwahrscheinlichkeiten:</b><br>",
     "Durchschnittliche Lage: ", round(df$prob_durchschnittlich * 100, 1), " %<br>",
