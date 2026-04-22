@@ -552,6 +552,123 @@ saveRDS(linear_model_zentral, file = "modelle/linear_model_zentral.rds")
 
 
 
+
+
+
+
+
+
+
+# GAM mit spatial komponente mit brw und wneiger flexibiltät
+# 1. Koordinaten für den Datensatz 'Ausserhalb' entpacken
+model_data_complete_ausserhalb <- model_data_complete_ausserhalb %>%
+  mutate(
+    long = st_coordinates(.)[, 1], # Die X-Koordinate aus 'geom' ziehen
+    lat  = st_coordinates(.)[, 2]  # Die Y-Koordinate aus 'geom' ziehen
+  )
+
+# 2. Koordinaten für den Datensatz 'Zentral' entpacken
+model_data_complete_zentral <- model_data_complete_zentral %>%
+  mutate(
+    long = st_coordinates(.)[, 1],
+    lat  = st_coordinates(.)[, 2]
+  )
+
+
+# --- 1. MODELL: AUSSERHALB ---
+formula_list_less1 <- list(
+  wohnlage_ebene ~ 
+    s(erreichbarkeit_gr10ha_in_metern_adr, k=3, bs = "cr") +
+    s(erreichbarkeit_innenstadt_in_minuten_adr, k=3, bs = "cr") +
+    s(erreichbarkeit_naechstehaltestelle_in_minuten_adr, k=3, bs = "cr") +
+    s(grundschul_num, k=3, bs = "cr") +
+    s(kitakigaho_num, k=3, bs = "cr") +
+    s(ortszentru_num, k=3, bs = "cr") +
+    s(spielplatz_num, k=3, bs = "cr") +
+    s(brw_log, k=3, bs = "cr") +
+    s(anteil_vf_sv, k=3, bs = "cr") +
+    s(anteil_gf_sv, k=3, bs = "cr") +
+    # NEU: 2D-Spline für die räumlichen Koordinaten (geringes k)
+    s(long, lat, k=10, bs="tp"), 
+  
+  ~ 
+    s(erreichbarkeit_gr10ha_in_metern_adr, k=3, bs = "cr") +
+    s(erreichbarkeit_innenstadt_in_minuten_adr, k=3, bs = "cr") +
+    s(erreichbarkeit_naechstehaltestelle_in_minuten_adr, k=3, bs = "cr") +
+    s(grundschul_num, k=3, bs = "cr") +
+    s(kitakigaho_num, k=3, bs = "cr") +
+    s(ortszentru_num, k=3, bs = "cr") +
+    s(spielplatz_num, k=3, bs = "cr") +
+    s(brw_log, k=3, bs = "cr") +
+    s(anteil_vf_sv, k=3, bs = "cr") +
+    s(anteil_gf_sv, k=3, bs = "cr") +
+    # NEU: 2D-Spline für die räumlichen Koordinaten (geringes k)
+    s(long, lat, k=10, bs="tp")
+)
+
+gam_model_ausserhalb_spatial <- gam(
+  formula = formula_list_less1,
+  data = model_data_complete_ausserhalb,
+  family = mgcv::multinom(K = 2), 
+  method = "REML", 
+  optimizer = "efs",
+  control = gam.control(trace = TRUE, keepData = FALSE) 
+)
+
+# Modell speichern
+saveRDS(gam_model_ausserhalb_spatial, file = "modelle/gam_model_ausserhalb_spatial.rds")
+
+
+# --- 2. MODELL: ZENTRAL ---
+formula_list_less2 <- list(
+  wohnlage_ebene ~ 
+    s(erreichbarkeit_gr10ha_in_metern_adr, k=3, bs="cr") +
+    s(erreichbarkeit_innenstadt_in_minuten_adr, k=3, bs="cr") +
+    s(erreichbarkeit_naechstehaltestelle_in_minuten_adr, k=3, bs="cr") +
+    s(grundschul_num, k=3, bs = "cr") +
+    s(kitakigaho_num, k=3, bs = "cr") +
+    s(ortszentru_num, k=3, bs = "cr") +
+    s(spielplatz_num, k=3, bs = "cr") +
+    s(brw_log, k=3, bs = "cr") +
+    s(anteil_vf_sv, k=3, bs="cr") +
+    s(anteil_gf_sv, k=3, bs="cr") +
+    # NEU: 2D-Spline für die räumlichen Koordinaten
+    s(long, lat, k=10, bs="tp"),
+  
+  ~ 
+    s(erreichbarkeit_gr10ha_in_metern_adr, k=3, bs="cr") +
+    s(erreichbarkeit_innenstadt_in_minuten_adr, k=3, bs="cr") +
+    s(erreichbarkeit_naechstehaltestelle_in_minuten_adr, k=3, bs="cr") +
+    s(grundschul_num, k=3, bs = "cr") +
+    s(kitakigaho_num, k=3, bs = "cr") +
+    s(ortszentru_num, k=3, bs = "cr") +
+    s(spielplatz_num, k=3, bs = "cr") +
+    s(brw_log, k=3, bs = "cr") +
+    s(anteil_vf_sv, k=3, bs="cr") +
+    s(anteil_gf_sv, k=3, bs="cr") +
+    # NEU: 2D-Spline für die räumlichen Koordinaten
+    s(long, lat, k=10, bs="tp")
+)
+
+gam_model_zentral_spatial <- gam(
+  formula = formula_list_less2,
+  data = model_data_complete_zentral,
+  family = mgcv::multinom(K = 2), 
+  method = "REML", 
+  optimizer = "efs",
+  control = gam.control(trace = TRUE, keepData = FALSE) 
+)
+
+# Modell speichern
+saveRDS(gam_model_zentral_spatial, file = "modelle/gam_model_zentral_spatial.rds")
+
+
+
+
+
+
+
+
 # Random Forest Modell
 # ==============================================================================
 # RANDOM FOREST MODELLE (mlr3 + ranger)
@@ -630,3 +747,126 @@ model_rf_zentral <- learner_rf$clone()$train(task_zentral)
 saveRDS(model_rf_zentral, file = "modelle/rf_model_zentral.rds")
 cat("Random Forest 'Zentral' gespeichert unter: modelle/rf_model_zentral.rds\n")
 
+
+
+
+
+# ==============================================================================
+# RANDOM FOREST MODELLE MIT SPATIAL CROSS-VALIDATION
+# ==============================================================================
+
+library(sf)
+library(dplyr)
+library(mlr3)
+library(mlr3learners) 
+library(ranger)
+library(mlr3spatiotempcv) # Das Wundermittel für räumliche Splits!
+
+cat("Starte räumliches Random Forest Training...\n")
+
+# 1. Feature-Auswahl (OHNE den BRW, um den Zirkelschluss zu vermeiden!)
+features <- c(
+  "erreichbarkeit_gr10ha_in_metern_adr",
+  "erreichbarkeit_innenstadt_in_minuten_adr",
+  "erreichbarkeit_naechstehaltestelle_in_minuten_adr",
+  # "brw_log", 
+  "grundschul_num",
+  "kitakigaho_num",
+  "ortszentru_num",
+  "spielplatz_num",
+  "anteil_vf_sv",
+  "anteil_gf_sv"
+)
+
+# ==============================================================================
+# 2. DATENVORBEREITUNG (Koordinaten retten!)
+# Wir müssen die X/Y-Koordinaten extrahieren, bevor wir die Geometrie löschen.
+# ==============================================================================
+
+# Für Modell 'Zentral'
+coords_zentral <- st_coordinates(model_data_complete_zentral)
+rf_data_zentral <- model_data_complete_zentral %>%
+  st_drop_geometry() %>%
+  select(wohnlage_ebene, all_of(features)) %>%
+  mutate(
+    wohnlage_ebene = as.factor(wohnlage_ebene),
+    x = coords_zentral[, 1], # X-Koordinate hinzufügen
+    y = coords_zentral[, 2]  # Y-Koordinate hinzufügen
+  )
+
+# Für Modell 'Ausserhalb'
+coords_ausserhalb <- st_coordinates(model_data_complete_ausserhalb)
+rf_data_ausserhalb <- model_data_complete_ausserhalb %>%
+  st_drop_geometry() %>%
+  select(wohnlage_ebene, all_of(features)) %>%
+  mutate(
+    wohnlage_ebene = as.factor(wohnlage_ebene),
+    x = coords_ausserhalb[, 1],
+    y = coords_ausserhalb[, 2]
+  )
+
+# ==============================================================================
+# 3. RÄUMLICHE TASKS ERSTELLEN
+# as_task_classif_st sagt mlr3, dass es sich um Geodaten handelt!
+# ==============================================================================
+
+task_zentral <- as_task_classif_st(
+  rf_data_zentral, 
+  target = "wohnlage_ebene", 
+  id = "rf_zentral",
+  coordinate_names = c("x", "y") # Hier sagen wir mlr3, wo die Koordinaten liegen
+)
+
+task_ausserhalb <- as_task_classif_st(
+  rf_data_ausserhalb, 
+  target = "wohnlage_ebene", 
+  id = "rf_ausserhalb",
+  coordinate_names = c("x", "y")
+)
+
+# Learner definieren (Ich habe den gestutzten Wald beibehalten, das schützt doppelt!)
+learner_rf <- lrn("classif.ranger", 
+                  predict_type = "prob", 
+                  num.trees = 500,
+                  max.depth = 10,       # Verhindert Überanpassung
+                  min.node.size = 20,   # Mindestens 20 Häuser pro Blatt
+                  importance = "permutation") 
+
+
+# ==============================================================================
+# 4. DIE RÄUMLICHE EVALUIERUNG (So testest du die echte Accuracy)
+# ==============================================================================
+cat("\nFühre räumliche Evaluierung durch (Das dauert kurz)...\n")
+
+# Wir definieren eine räumliche Kreuzvalidierung mit 5 Folds (Stadt in 5 Blöcke geteilt)
+spatial_cv <- rsmp("spcv_coords", folds = 5)
+
+# Führe die Validierung für das zentrale Modell aus
+rr_zentral <- resample(task_zentral, learner_rf, spatial_cv, store_models = TRUE)
+acc_spatial_zentral <- rr_zentral$aggregate(msr("classif.acc"))
+
+cat("=> Echte RÄUMLICHE Accuracy Zentral:", round(acc_spatial_zentral * 100, 2), "%\n")
+
+# Führe die Validierung für das äußere Modell aus
+rr_ausserhalb <- resample(task_ausserhalb, learner_rf, spatial_cv, store_models = TRUE)
+acc_spatial_ausserhalb <- rr_ausserhalb$aggregate(msr("classif.acc"))
+
+cat("=> Echte RÄUMLICHE Accuracy Ausserhalb:", round(acc_spatial_ausserhalb * 100, 2), "%\n\n")
+
+
+# ==============================================================================
+# 5. FINALE MODELLE TRAINIEREN UND SPEICHERN
+# (Nachdem wir wissen, wie gut das Modell ist, trainieren wir es auf ALLEN Daten)
+# ==============================================================================
+
+if (!dir.exists("modelle")) dir.create("modelle")
+
+# Modell Zentral
+model_rf_zentral <- learner_rf$clone()$train(task_zentral)
+saveRDS(model_rf_zentral, file = "modelle/rf_model_zentral_spatial.rds")
+cat("✓ Finales Modell 'Zentral' gespeichert.\n")
+
+# Modell Ausserhalb
+model_rf_ausserhalb <- learner_rf$clone()$train(task_ausserhalb)
+saveRDS(model_rf_ausserhalb, file = "modelle/rf_model_ausserhalb_spatial.rds")
+cat("✓ Finales Modell 'Ausserhalb' gespeichert.\n")

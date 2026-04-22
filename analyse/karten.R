@@ -30,6 +30,10 @@ model_gam_zentral_less <- readRDS("modelle/gam_model_zentral_less.rds")
 
 model_gam_ausserhalb_less <- readRDS("modelle/gam_model_ausserhalb_less.rds")
 
+model_gam_zentral_spatial <- readRDS("modelle/gam_model_zentral_spatial.rds")
+
+model_gam_ausserhalb_spatial <- readRDS("modelle/gam_model_ausserhalb_spatial.rds")
+
 wohnlage_farben <- c(
   "durchschnittliche Lage" = "#e8f5a4",
   "gute Lage" = "#afe391",
@@ -2037,3 +2041,217 @@ if (!dir.exists("interaktive_karten")) dir.create("interaktive_karten")
 saveWidget(karte_less, file = "interaktive_karten/interaktive_karte_model_werte_less.html", selfcontained = TRUE)
 
 cat("✓ Fertig! Karte erfolgreich als 'interaktive_karte_model_werte_less.html' gespeichert.\n")
+
+
+
+
+
+
+# ==============================================================================
+# HAUPTKARTE: GAM MODELLE MIT RÄUMLICHER KOMPONENTE (SPATIAL)
+# ==============================================================================
+cat("Generiere Daten für räumliche Modelle (SPATIAL)...\n")
+
+# 1. Koordinaten für den Datensatz 'Ausserhalb' entpacken
+model_data_complete_ausserhalb <- model_data_complete_ausserhalb %>%
+  mutate(
+    long = st_coordinates(.)[, 1], # Die X-Koordinate aus 'geom' ziehen
+    lat  = st_coordinates(.)[, 2]  # Die Y-Koordinate aus 'geom' ziehen
+  )
+
+# 2. Koordinaten für den Datensatz 'Zentral' entpacken
+model_data_complete_zentral <- model_data_complete_zentral %>%
+  mutate(
+    long = st_coordinates(.)[, 1],
+    lat  = st_coordinates(.)[, 2]
+  )
+
+# 1. Daten erstellen mit deinen Custom-Funktionen
+fehler_model_gam_zentral_spatial <- missclassification_data_zentral(
+  model_gam_zentral_spatial, 
+  data = model_data_complete_zentral,
+  predict_fun = predict_labels_discr
+)
+fehler_model_gam_ausserhalb_spatial <- missclassification_data_ausserhalb(
+  model_gam_ausserhalb_spatial, 
+  data = model_data_complete_ausserhalb,
+  predict_fun = predict_labels_discr
+)
+korrekt_model_gam_zentral_spatial <- korrekte_vorhersagen_zentral(
+  model_gam_zentral_spatial, 
+  data = model_data_complete_zentral,
+  predict_fun = predict_labels_discr
+)
+korrekt_model_gam_ausserhalb_spatial <- korrekte_vorhersagen_ausserhalb(
+  model_gam_ausserhalb_spatial, 
+  data = model_data_complete_ausserhalb,
+  predict_fun = predict_labels_discr
+)
+
+# 2. In sf Objekte umwandeln und filtern
+fehler_model_gam_zentral_spatial <- st_as_sf(fehler_model_gam_zentral_spatial) %>%
+  filter(wohnlage_bedeutung %in% c("zentrale durchschnittliche Lage", "zentrale gute Lage", "zentrale beste Lage"))
+fehler_model_gam_ausserhalb_spatial <- st_as_sf(fehler_model_gam_ausserhalb_spatial) %>%
+  filter(wohnlage_bedeutung %in% c("durchschnittliche Lage", "gute Lage", "beste Lage"))
+
+korrekt_model_gam_zentral_spatial <- st_as_sf(korrekt_model_gam_zentral_spatial) %>%
+  filter(wohnlage_bedeutung %in% c("zentrale durchschnittliche Lage", "zentrale gute Lage", "zentrale beste Lage"))
+korrekt_model_gam_ausserhalb_spatial <- st_as_sf(korrekt_model_gam_ausserhalb_spatial) %>%
+  filter(wohnlage_bedeutung %in% c("durchschnittliche Lage", "gute Lage", "beste Lage"))
+
+# 3. sf-Objekte bereinigen (mit deiner Hilfsfunktion)
+fehler_model_gam_zentral_spatial <- prepare_sf_object(fehler_model_gam_zentral_spatial)
+fehler_model_gam_ausserhalb_spatial <- prepare_sf_object(fehler_model_gam_ausserhalb_spatial)
+korrekt_model_gam_zentral_spatial <- prepare_sf_object(korrekt_model_gam_zentral_spatial)
+korrekt_model_gam_ausserhalb_spatial <- prepare_sf_object(korrekt_model_gam_ausserhalb_spatial)
+
+# 4. Levels angleichen
+levels_kombiniert <- c(
+  "durchschnittliche Lage", "gute Lage", "beste Lage",
+  "zentrale durchschnittliche Lage", "zentrale gute Lage", "zentrale beste Lage"
+)
+
+fehler_model_gam_zentral_spatial$Wohnlage_vorhersage <- factor(fehler_model_gam_zentral_spatial$Wohnlage_vorhersage, levels = levels_kombiniert)
+fehler_model_gam_zentral_spatial$Wohnlage_wahr <- factor(fehler_model_gam_zentral_spatial$Wohnlage_wahr, levels = levels_kombiniert)
+fehler_model_gam_ausserhalb_spatial$Wohnlage_vorhersage <- factor(fehler_model_gam_ausserhalb_spatial$Wohnlage_vorhersage, levels = levels_kombiniert)
+fehler_model_gam_ausserhalb_spatial$Wohnlage_wahr <- factor(fehler_model_gam_ausserhalb_spatial$Wohnlage_wahr, levels = levels_kombiniert)
+
+korrekt_model_gam_zentral_spatial$Wohnlage_vorhersage <- factor(korrekt_model_gam_zentral_spatial$Wohnlage_vorhersage, levels = levels_kombiniert)
+korrekt_model_gam_zentral_spatial$Wohnlage_wahr <- factor(korrekt_model_gam_zentral_spatial$Wohnlage_wahr, levels = levels_kombiniert)
+korrekt_model_gam_ausserhalb_spatial$Wohnlage_vorhersage <- factor(korrekt_model_gam_ausserhalb_spatial$Wohnlage_vorhersage, levels = levels_kombiniert)
+korrekt_model_gam_ausserhalb_spatial$Wohnlage_wahr <- factor(korrekt_model_gam_ausserhalb_spatial$Wohnlage_wahr, levels = levels_kombiniert)
+
+# 5. Kombinieren und nach WGS84 transformieren
+fehler_spatial_kombiniert_wgs <- rbind(fehler_model_gam_zentral_spatial, fehler_model_gam_ausserhalb_spatial) %>% st_transform(4326)
+korrekt_spatial_kombiniert_wgs <- rbind(korrekt_model_gam_zentral_spatial, korrekt_model_gam_ausserhalb_spatial) %>% st_transform(4326)
+
+# 6. Farbzuordnung
+fehler_spatial_kombiniert_wgs <- fehler_spatial_kombiniert_wgs %>% 
+  mutate(color = case_when(
+    Wohnlage_vorhersage == "durchschnittliche Lage" ~ "#e8f5a4",
+    Wohnlage_vorhersage == "gute Lage" ~ "#afe391",
+    Wohnlage_vorhersage == "beste Lage" ~ "#7FCDBB",
+    Wohnlage_vorhersage == "zentrale durchschnittliche Lage" ~ "#41B6C4",
+    Wohnlage_vorhersage == "zentrale gute Lage" ~ "#1f5a82",
+    Wohnlage_vorhersage == "zentrale beste Lage" ~ "#271352"
+  ))
+
+korrekt_spatial_kombiniert_wgs <- korrekt_spatial_kombiniert_wgs %>% 
+  mutate(color = case_when(
+    Wohnlage_vorhersage == "durchschnittliche Lage" ~ "#e8f5a4",
+    Wohnlage_vorhersage == "gute Lage" ~ "#afe391",
+    Wohnlage_vorhersage == "beste Lage" ~ "#7FCDBB",
+    Wohnlage_vorhersage == "zentrale durchschnittliche Lage" ~ "#41B6C4",
+    Wohnlage_vorhersage == "zentrale gute Lage" ~ "#1f5a82",
+    Wohnlage_vorhersage == "zentrale beste Lage" ~ "#271352"
+  ))
+
+# ==============================================================================
+# 7. WAHRSCHEINLICHKEITEN BERECHNEN UND POPUPS GENERIEREN
+# ==============================================================================
+cat("Berechne Wahrscheinlichkeiten und Popups...\n")
+
+# Wahrscheinlichkeiten ziehen (wir übergeben die _spatial Modelle)
+fehler_spatial_fuer_karte <- berechne_probs_sicher(fehler_spatial_kombiniert_wgs, model_gam_zentral_spatial, model_gam_ausserhalb_spatial)
+korrekt_spatial_fuer_karte <- berechne_probs_sicher(korrekt_spatial_kombiniert_wgs, model_gam_zentral_spatial, model_gam_ausserhalb_spatial)
+
+# Spezielles Popup für die "spatial" Variante
+erstelle_popup_html_spatial <- function(df) {
+  paste0(
+    "<b>Wahre Lage:</b> ", df$Wohnlage_wahr, "<br>",
+    "<b>Vorhersage <span style='color:purple;'>(mit räumlicher Komponente)</span>:</b> ", df$Wohnlage_vorhersage, "<br>",
+    "<hr>",
+    "<b>Klassenwahrscheinlichkeiten:</b><br>",
+    "Durchschnittliche Lage: ", round(df$prob_durchschnittlich * 100, 1), " %<br>",
+    "Gute Lage: ", round(df$prob_gut * 100, 1), " %<br>",
+    "Beste Lage: ", round(df$prob_beste * 100, 1), " %<br>",
+    "<hr>",
+    "<i>Die Eckdaten des Standorts:</i><br>",
+    "<b>log(Bodenrichtwert):</b> ", round(df$brw_log, 2), "<br>",
+    "<b>Bodenrichtwert:</b> ", df$brw, " €/m²<br>",
+    "<b>Distanz Grünfläche (>10ha):</b> ", df$erreichbarkeit_gr10ha_in_metern_adr, " m<br>",
+    "<b>Fahrtzeit Innenstadt (ÖPNV):</b> ", df$erreichbarkeit_innenstadt_in_minuten_adr, " min<br>",
+    "<b>Erreichbarkeit nächste Haltestelle:</b> ", df$erreichbarkeit_naechstehaltestelle_in_minuten_adr, " min<br>",
+    "<b>Fußweg Grundschule:</b> ", df$grundschul_num, " m<br>",
+    "<b>Fußweg Spielplatz:</b> ", df$spielplatz_num, " m<br>",
+    "<b>Fußweg Kita:</b> ", df$kitakigaho_num, " m<br>",
+    "<b>Fußweg Ortszentrum:</b> ", df$ortszentru_num, " m<br>"
+  )
+}
+
+fehler_spatial_fuer_karte$popup_text <- erstelle_popup_html_spatial(fehler_spatial_fuer_karte)
+korrekt_spatial_fuer_karte$popup_text <- erstelle_popup_html_spatial(korrekt_spatial_fuer_karte)
+
+# ==============================================================================
+# 8. KARTE BAUEN UND SPEICHERN
+# ==============================================================================
+cat("Zeichne Karte...\n")
+
+punkt_groesse <- 6 
+
+karte_spatial <- leaflet(options = leafletOptions(preferCanvas = TRUE)) %>%
+  setView(lng = 11.5761, lat = 48.1371, zoom = 11) %>%
+  addProviderTiles("CartoDB.Positron") %>%
+  
+  addPolygons(
+    data = wohnlagen_muc_wgs,
+    fillColor = ~color,
+    fillOpacity = 0.5,
+    color = "black",
+    weight = 0.5,
+    label = ~as.character(Wohnlage)
+  ) %>%
+  
+  addPolylines(
+    data = wohnlage_grenzen_wgs, 
+    color = "black", 
+    weight = 0.5
+  ) %>%
+  
+  # KORREKTE PUNKTE
+  addCircleMarkers(
+    data = korrekt_spatial_fuer_karte,
+    fillColor = ~color,
+    fillOpacity = 1,
+    color = "black",
+    stroke = TRUE,
+    weight = 1,         
+    opacity = 1,        
+    radius = punkt_groesse,
+    popup = ~popup_text, 
+    group = "Korrekt (Spatial)"
+  ) %>%
+  
+  # FEHLERHAFTE PUNKTE
+  addCircleMarkers(
+    data = fehler_spatial_fuer_karte,
+    fillColor = ~color,
+    fillOpacity = 1,
+    color = "red",
+    stroke = TRUE,
+    weight = 2,         
+    opacity = 1,        
+    radius = punkt_groesse,
+    popup = ~popup_text, 
+    group = "Fehler (Spatial)"
+  ) %>%
+  
+  addLegend(
+    position = "bottomright",
+    colors = unname(wohnlage_farben), 
+    labels = names(wohnlage_farben),
+    title = "Vorhersage (Räumliches GAM)",
+    opacity = 1
+  ) %>%
+  
+  addLayersControl(
+    overlayGroups = c("Fehler (Spatial)", "Korrekt (Spatial)"),
+    options = layersControlOptions(collapsed = FALSE)
+  )
+
+print(karte_spatial)
+
+if (!dir.exists("interaktive_karten")) dir.create("interaktive_karten")
+saveWidget(karte_spatial, file = "interaktive_karten/interaktive_karte_model_werte_spatial.html", selfcontained = FALSE)
+
+cat("✓ Fertig! Karte erfolgreich als 'interaktive_karte_model_werte_spatial.html' gespeichert.\n")

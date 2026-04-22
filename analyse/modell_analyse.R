@@ -39,9 +39,13 @@ model_gam_zentral_less <- readRDS("modelle/gam_model_zentral_less.rds")
 
 model_gam_ausserhalb_less <- readRDS("modelle/gam_model_ausserhalb_less.rds")
 
-model_rf_ausserhalb <- readRDS("modelle/rf_model_ausserhalb.rds")
+model_rf_ausserhalb <- readRDS("modelle/rf_model_ausserhalb_spatial.rds")
 
-model_rf_zentral <- readRDS("modelle/rf_model_zentral.rds")
+model_rf_zentral <- readRDS("modelle/rf_model_zentral_spatial.rds")
+
+model_gam_zentral_spatial <- readRDS("modelle/gam_model_zentral_spatial.rds")
+
+model_gam_ausserhalb_spatial <- readRDS("modelle/gam_model_ausserhalb_spatial.rds")
 
 # Modelloutput ansehen
 summary(model_gam_zentral)
@@ -91,6 +95,14 @@ evaluate_confusion_matrix(model_gam_zentral_less,
                           test_data = model_data_complete_zentral,
                           y_col = "wohnlage_ebene") # 77% accuracy
 
+evaluate_confusion_matrix(model_gam_ausserhalb_spatial,
+                          test_data = model_data_complete_ausserhalb,
+                          y_col = "wohnlage_ebene") # 78% accuracy
+
+evaluate_confusion_matrix(model_gam_zentral_spatial,
+                          test_data = model_data_complete_zentral,
+                          y_col = "wohnlage_ebene") # 89% accuracy
+
 # Random Forest Modelle (accuracy extrem hoch!)
 pred_rf_zentral <- model_rf_zentral$predict_newdata(model_data_complete_zentral)
 
@@ -103,6 +115,18 @@ pred_rf_ausserhalb <- model_rf_ausserhalb$predict_newdata(model_data_complete_au
 print(pred_rf_zentral$confusion)
 acc <- pred_rf_zentral$score(msr("classif.acc"))
 cat("Accuracy:", acc, "\n")
+
+
+# random Forest mit spatial korrektur
+# Nutzt direkt den vorbereiteten Task von vorhin (inkl. x und y)
+pred_rf_zentral <- model_rf_zentral$predict(task_zentral)
+
+# Zeigt die Confusion Matrix
+print(pred_rf_zentral$confusion)
+
+# Zeigt die Accuracy
+cat("Accuracy:", pred_rf_zentral$score(msr("classif.acc")), "\n")
+
 
 
 # Importance für das zentrale Modell ziehen
