@@ -122,6 +122,7 @@ model_data <- data %>%
          brw_log,
          anteil_vf_sv,
          anteil_gf_sv,
+         zentraler_bereich,
         # anteil_beb_sv,
          geom)
 model_data_complete <- na.omit(model_data) # Zeilen mit NA entfernen
@@ -165,3 +166,110 @@ table(data_complete$geb_nutz)
 sapply(data_complete, function(x) length(unique(x)))
 
 
+
+
+
+
+
+
+# Modelldatensatz nur Pasing
+
+table(data$gemarkung_)
+
+library(sf)
+library(dplyr)
+
+cat("Erstelle gefilterten Datensatz für Pasing...\n")
+
+# 1. Deine Original-Features (die Namen bleiben exakt so!)
+features <- c(
+  "erreichbarkeit_gr10ha_in_metern_adr",
+  "erreichbarkeit_innenstadt_in_minuten_adr",
+  "erreichbarkeit_naechstehaltestelle_in_minuten_adr",
+  "brw_log",
+  "grundschul_num",
+  "kitakigaho_num",
+  "ortszentru_num",
+  "spielplatz_num",
+  "anteil_vf_sv",
+  "anteil_gf_sv"
+)
+
+# 2. Filtern nach Pasing aus dem Datensatz 'data'
+daten_pasing <- data %>%
+  filter(grepl("Pasing", gemarkung_, ignore.case = TRUE))
+
+# 3. Koordinaten auf Longitude/Latitude (WGS84) bringen
+daten_pasing_wgs <- st_transform(daten_pasing, crs = 4326)
+coords <- st_coordinates(daten_pasing_wgs)
+
+# 4. Datensatz exakt nach deinen Vorgaben aufbauen
+pasing_matrix_df <- daten_pasing_wgs %>%
+  st_drop_geometry() %>% 
+  mutate(
+    # Koordinaten anhängen
+    s.long = coords[, 1],
+    s.lat  = coords[, 2],
+    
+    # wlg (Wohnlage) als 0, 1, 2 kodieren (numerisch)
+    wlg_numeric = case_when(
+      grepl("durchschnittliche", wohnlage_bedeutung, ignore.case = TRUE) ~ 0,
+      grepl("gute", wohnlage_bedeutung, ignore.case = TRUE) ~ 1,
+      grepl("beste", wohnlage_bedeutung, ignore.case = TRUE) ~ 2,
+      TRUE ~ NA_real_
+    )
+  ) %>%
+  # Spalten sortieren: s.long, s.lat, wlg, original_factor, und dann die Features
+  select(s.long, s.lat, wlg_numeric, wohnlage_bedeutung, all_of(features))
+
+
+# Zeilen mit NA's entfernen
+pasing_matrix_df_ohne_na <- na.omit(pasing_matrix_df)
+
+# Kurzer Check
+cat("Anzahl der Adressen (Zeilen) in Pasing:", nrow(pasing_matrix_df), "\n")
+str(pasing_matrix_df) # Prüfe, ob wlg numeric und wohnlage_ebene factor ist
+
+
+# Speichern
+
+saveRDS(pasing_matrix_df, file = "daten/pasing_data.rds")
+write.csv(pasing_matrix_df, file = "daten/pasing_data.csv")
+saveRDS(pasing_matrix_df_ohne_na, file = "daten/pasing_data_ohne_na.rds")
+write.csv(pasing_matrix_df_ohne_na, file = "daten/pasing_data_ohne_na.csv")
+
+
+
+
+
+
+
+# Modelldatensatz für LDA
+# Koordinaten auf Longitude/Latitude (WGS84) bringen
+model_munich_data<- st_transform(model_data_complete, crs = 4326)
+coords <- st_coordinates(model_munich_data)
+
+model_munich_data <- model_munich_data %>%
+  st_drop_geometry() %>% 
+  mutate(
+    # Koordinaten anhängen
+    s.long = coords[, 1],
+    s.lat  = coords[, 2]
+  ) 
+
+
+# Alternative ohne zentrale Lagen
+model_munich_data2 <- st_transform(model_data_complete, crs = 4326)
+coords <- st_coordinates(model_munich_data2)
+
+model_munich_data2 <- model_munich_data2 %>%
+  st_drop_geometry() %>% 
+  mutate(
+    # Koordinaten anhängen
+    s.long = coords[, 1],
+    s.lat  = coords[, 2],
+    
+    # "zentrale" aus dem Text entfernen, Leerzeichen trimmen und als Faktor speichern.
+    # Aus "zentrale durchschnittliche Lage" wird so "durchschnittliche Lage"
+    wohnlage_bedeutung = as.factor(trimws(gsub("zentrale", "", wohnlage_bedeutung, ignore.case = TRUE)))
+  ) 

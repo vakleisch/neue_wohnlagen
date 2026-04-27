@@ -223,6 +223,8 @@ korrekt_model_gam_kombiniert_wgs <- korrekt_model_gam_kombiniert_wgs %>%
 # Wohnlage_grenzen
 wohnlage_grenzen_wgs <- st_transform(wohnlage_grenzen, crs = 4326)
 
+saveRDS(wohnlagen_muc_wgs, "daten/wohnlagen_flächen.rds")
+
 
 
 #-------------------------------------------------------------------------------

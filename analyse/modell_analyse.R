@@ -309,12 +309,12 @@ visualize_gam_logodds(
 )
 
 # GAM mit weniger Knoten:
-visualize_gam_probabilities(
-  model = model_gam_zentral_less, 
+visualize_gam_logodds(
+  model = model_gam_ausserhalb_spatial, 
   file_name_prefix = "prob_gam", 
-  subfolder_name = "neu_part_effs_gam_zentral_brw_less_probs",
-  klassen_labels = c("zentrale durchschnittliche Lage", 
-                     "zentrale gute Lage", "zentrale beste Lage")
+  subfolder_name = "neu_part_effs_gam_zentral_spatial_probs",
+  klassen_labels = c("durchschnittliche Lage", 
+                     "gute Lage", "beste Lage")
 )
 
 visualize_gam_probabilities(
