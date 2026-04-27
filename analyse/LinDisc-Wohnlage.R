@@ -1654,5 +1654,5 @@ karte_6cat <- leaflet(options = leafletOptions(preferCanvas = TRUE)) %>%
 
 # Anzeigen und Speichern
 print(karte_6cat)
-saveWidget(karte_6cat, file = "interaktive_karten/karte_muenchen_6cat.html", selfcontained = TRUE)
+saveWidget(karte_6cat, file = "results_lin_disc/karte_muenchen_6cat.html", selfcontained = TRUE)
 cat("✓ Karte erfolgreich gespeichert.\n")
