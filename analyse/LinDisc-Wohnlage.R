@@ -1412,14 +1412,14 @@ PROB_map1 <- readRDS("results_lin_disc/PROB_prior_scale_100_beides_3cat.rds") # 
 
 levels_c <- levels(data_map1$c)
 
-
-
-# 3. Dataframe für die Karte zusammenstellen
+# 3. Dataframe für die Karte zusammenstellen (KORRIGIERT)
 map_data_3cat <- data_map1 %>%
   mutate(
-    prob_0 = PROB_map1[, 1],
-    prob_1 = PROB_map1[, 2],
-    prob_2 = PROB_map1[, 3],
+    # Wir holen uns die Wahrscheinlichkeiten jetzt DYNAMISCH über den Namen des Levels,
+    # um alphabetische Sortierungsfehler von R zu vermeiden!
+    prob_durchschnitt = PROB_map1[, which(levels_c == "durchschnittliche Lage")],
+    prob_gute         = PROB_map1[, which(levels_c == "gute Lage")],
+    prob_beste        = PROB_map1[, which(levels_c == "beste Lage")],
     
     # Echte Lage und Vorhersage direkt als Text
     Wohnlage_wahr = as.character(c),
@@ -1432,7 +1432,7 @@ map_data_3cat <- data_map1 %>%
     color = unname(wohnlage_farben_3[Wohnlage_vorhersage])
   )
 
-# 4. HTML-Popups generieren
+# 4. HTML-Popups generieren (KORRIGIERT)
 erstelle_popup <- function(df) {
   paste0(
     "<b>Wahre Lage:</b> ", df$Wohnlage_wahr, "<br>",
@@ -1440,9 +1440,10 @@ erstelle_popup <- function(df) {
     df$Wohnlage_vorhersage, "</span><br>",
     "<hr>",
     "<b>Berechnete Dichte-Wahrscheinlichkeiten:</b><br>",
-    "Durchschnittliche Lage: ", round(df$prob_0 * 100, 1), " %<br>",
-    "Gute Lage: ", round(df$prob_1 * 100, 1), " %<br>",
-    "Beste Lage: ", round(df$prob_2 * 100, 1), " %<br>",
+    # Hier rufen wir jetzt die korrekt zugeordneten Spalten auf!
+    "Durchschnittliche Lage: ", round(df$prob_durchschnitt * 100, 1), " %<br>",
+    "Gute Lage: ", round(df$prob_gute * 100, 1), " %<br>",
+    "Beste Lage: ", round(df$prob_beste * 100, 1), " %<br>",
     "<hr>",
     "<i>Infrastruktur-Werte:</i><br>",
     "Park (>10ha): ", df$y1, " m<br>",
@@ -1455,6 +1456,7 @@ erstelle_popup <- function(df) {
 }
 
 map_data_3cat$popup_text <- erstelle_popup(map_data_3cat)
+
 
 # 5. Aufteilen für den Layer-Switch
 daten_korrekt <- map_data_3cat %>% filter(Korrekt == TRUE)
@@ -1548,33 +1550,42 @@ wohnlage_farben_6 <- c(
   "zentrale beste Lage"             = "#271352"
 )
 
-# 3. Datensatz Außerhalb vorbereiten
+levels_aus <- levels(data_aus$c)
+levels_zent <- levels(data_zent$c)
+
+# 3. Datensatz Außerhalb vorbereiten (KORRIGIERT)
 map_data_aus <- data_aus %>%
   mutate(
     Wohnlage_wahr = as.character(c),
-    Wohnlage_vorhersage = levels(c)[max.col(PROB_aus)],
+    Wohnlage_vorhersage = levels_aus[max.col(PROB_aus)],
     Korrekt = (Wohnlage_wahr == Wohnlage_vorhersage),
-    prob_0 = PROB_aus[, 1], prob_1 = PROB_aus[, 2], prob_2 = PROB_aus[, 3]
+    
+    # Dynamische Zuweisung statt harter Spalten-Nummern!
+    prob_durchschnitt = PROB_aus[, which(levels_aus == "durchschnittliche Lage")],
+    prob_gute         = PROB_aus[, which(levels_aus == "gute Lage")],
+    prob_beste        = PROB_aus[, which(levels_aus == "beste Lage")]
   )
 
-# 4. Datensatz Zentral vorbereiten (Hier kleben wir "zentrale" wieder davor!)
+# 4. Datensatz Zentral vorbereiten (KORRIGIERT)
 map_data_zent <- data_zent %>%
   mutate(
-    # Wir machen aus "gute Lage" wieder "zentrale gute Lage" für die Karte
+    # Für die Karte das "zentrale" wieder ankleben
     Wohnlage_wahr = paste("zentrale", as.character(c)),
-    Wohnlage_vorhersage = paste("zentrale", levels(c)[max.col(PROB_zent)]),
-    
+    Wohnlage_vorhersage = paste("zentrale", levels_zent[max.col(PROB_zent)]),
     Korrekt = (Wohnlage_wahr == Wohnlage_vorhersage),
-    prob_0 = PROB_zent[, 1], prob_1 = PROB_zent[, 2], prob_2 = PROB_zent[, 3]
+    
+    # Dynamische Zuweisung!
+    prob_durchschnitt = PROB_zent[, which(levels_zent == "durchschnittliche Lage")],
+    prob_gute         = PROB_zent[, which(levels_zent == "gute Lage")],
+    prob_beste        = PROB_zent[, which(levels_zent == "beste Lage")]
   )
 
 # 5. Beide Datensätze für ganz München zusammenfügen
 map_data_6cat <- bind_rows(map_data_aus, map_data_zent) %>%
   mutate(color = unname(wohnlage_farben_6[Wohnlage_vorhersage]))
 
-# Popups generieren (nutzt die Funktion aus dem 1. Block!)
+# Popups generieren (nutzt die korrigierte Funktion erstelle_popup von eben!)
 map_data_6cat$popup_text <- erstelle_popup(map_data_6cat)
-
 # In Richtig und Falsch aufteilen
 daten_korrekt_6 <- map_data_6cat %>% filter(Korrekt == TRUE)
 daten_fehler_6  <- map_data_6cat %>% filter(Korrekt == FALSE)
@@ -1656,3 +1667,571 @@ karte_6cat <- leaflet(options = leafletOptions(preferCanvas = TRUE)) %>%
 print(karte_6cat)
 saveWidget(karte_6cat, file = "results_lin_disc/karte_muenchen_6cat.html", selfcontained = TRUE)
 cat("✓ Karte erfolgreich gespeichert.\n")
+
+
+
+
+
+
+
+
+
+# Version mit regulariserung
+library(mgcv)
+
+# ==============================================================================
+# 1. DATEN LADEN
+# ==============================================================================
+data <- readRDS("results_lin_disc/data_beides_3cat.rds")
+data <- data[complete.cases(data), ]
+
+# Zielvariable (bestehende Karte)
+data$c <- as.factor(data$c)
+levels_c <- levels(data$c)
+k <- length(levels_c)
+
+N <- nrow(data)
+d <- 10
+
+# ==============================================================================
+# 2. MODELL SCHÄTZEN (LIKELIHOOD)
+# ==============================================================================
+model <- gam(
+  list(
+    y1  ~ s(s.long, s.lat, by = c, k = 15) + c,
+    y2  ~ s(s.long, s.lat, by = c, k = 15) + c,
+    y3  ~ s(s.long, s.lat, by = c, k = 15) + c,
+    y4  ~ s(s.long, s.lat, by = c, k = 15) + c,
+    y5  ~ s(s.long, s.lat, by = c, k = 15) + c,
+    y6  ~ s(s.long, s.lat, by = c, k = 15) + c,
+    y7  ~ s(s.long, s.lat, by = c, k = 15) + c,
+    y8  ~ s(s.long, s.lat, by = c, k = 15) + c,
+    y9  ~ s(s.long, s.lat, by = c, k = 15) + c,
+    y10 ~ s(s.long, s.lat, by = c, k = 15) + c
+  ),
+  family = mvn(d = d),
+  data = data,
+  optimizer = "efs",                       # Schnellerer Optimizer
+  control = gam.control(trace = TRUE)      # Fortschrittsanzeige in der Konsole
+)
+saveRDS(model, "results_lin_disc/model_3cat_optimierung.rds")
+
+# ==============================================================================
+# 3. VARIANZSTRUKTUR
+# ==============================================================================
+VAR <- solve(crossprod(model$family$data$R))
+INV_VAR <- solve(VAR)
+
+# ==============================================================================
+# 4. SCORE MATRIX (LIKELIHOOD)
+# ==============================================================================
+Y <- cbind(data$y1, data$y2, data$y3, data$y4, data$y5,
+           data$y6, data$y7, data$y8, data$y9, data$y10)
+
+SCORE <- matrix(0, nrow = N, ncol = k)
+
+for (i in 1:k) {
+  tmp <- data
+  tmp$c <- levels_c[i]
+  
+  fit <- predict(model, newdata = tmp)
+  
+  diff <- Y - fit
+  score <- (diff %*% INV_VAR) * diff
+  SCORE[, i] <- rowSums(score)
+}
+
+# ==============================================================================
+# 5. VORBERECHNUNG: AKTUELLE KLASSE UND DATENGETRIEBENE BESTKLASSE
+# ==============================================================================
+
+old_idx <- match(as.character(data$c), levels_c)
+
+current_score <- SCORE[cbind(seq_len(N), old_idx)]
+
+best_idx <- max.col(-SCORE)
+best_score <- SCORE[cbind(seq_len(N), best_idx)]
+
+potential_improvement <- current_score - best_score
+
+cat("\nPotenzielle Verbesserung ohne Änderungskosten:\n")
+print(summary(potential_improvement))
+
+cat("\nÄnderungsrate ohne Änderungskosten:\n")
+print(mean(best_idx != old_idx))
+
+
+# ==============================================================================
+# 6. ENTSCHEIDUNGSREGEL MIT ÄNDERUNGSKOSTEN
+# ==============================================================================
+
+apply_change_penalty_idx <- function(SCORE, old_idx, lambda) {
+  
+  SCORE_adj <- SCORE
+  
+  for (j in seq_len(ncol(SCORE))) {
+    SCORE_adj[, j] <- SCORE[, j] + lambda * (j != old_idx)
+  }
+  
+  pred_idx <- max.col(-SCORE_adj)
+  
+  return(pred_idx)
+}
+
+
+# ==============================================================================
+# 7. LAMBDA-GITTER DEFINIEREN
+# ==============================================================================
+
+max_imp <- max(potential_improvement, na.rm = TRUE)
+
+lambda_grid <- sort(unique(c(
+  0,
+  seq(0, max_imp, length.out = 300),
+  seq(0, 10, by = 0.25),
+  seq(10, 30, by = 1),
+  seq(30, 100, by = 5)
+)))
+
+lambda_grid <- lambda_grid[lambda_grid >= 0]
+
+
+# ==============================================================================
+# 8. KANDIDATENKARTEN FÜR ALLE LAMBDA-WERTE BEWERTEN
+# ==============================================================================
+
+results_lambda <- data.frame()
+
+for (lambda in lambda_grid) {
+  
+  pred_idx <- apply_change_penalty_idx(SCORE, old_idx, lambda)
+  
+  pred_score <- SCORE[cbind(seq_len(N), pred_idx)]
+  
+  change_rate <- mean(pred_idx != old_idx)
+  
+  realized_improvement <- mean(current_score - pred_score)
+  
+  results_lambda <- rbind(results_lambda, data.frame(
+    lambda = lambda,
+    change_rate = change_rate,
+    realized_improvement = realized_improvement
+  ))
+}
+
+results_lambda <- results_lambda %>%
+  arrange(lambda)
+
+print(results_lambda)
+
+
+# ==============================================================================
+# 9. ELBOW-PLOT RECHTER ANSATZ
+# ==============================================================================
+
+library(ggplot2)
+
+elbow_plot <- ggplot(
+  results_lambda,
+  aes(
+    x = change_rate * 100,
+    y = realized_improvement,
+    label = round(lambda, 2)
+  )
+) +
+  geom_line(color = "blue", linewidth = 1) +
+  geom_point(color = "red", size = 1.25) +
+  geom_text(
+    vjust = -0.8,
+    size = 3,
+    check_overlap = TRUE
+  ) +
+  scale_x_reverse() +
+  labs(
+    title = "Rechter Ansatz: Datenverbesserung vs. Änderungsrate",
+    x = "Änderungsrate gegenüber alter Karte (%)",
+    y = "Realisierte SCORE Verbesserung",
+    caption = "Labels zeigen lambda = Änderungskosten"
+  ) +
+  theme_minimal()
+
+print(elbow_plot)
+
+
+# ==============================================================================
+# 10. AUTOMATISCHE ELBOW-AUSWAHL
+# ==============================================================================
+
+find_elbow <- function(df) {
+  
+  df <- df %>%
+    arrange(change_rate)
+  
+  x <- df$change_rate
+  y <- df$realized_improvement
+  
+  if (length(unique(x)) < 2 || length(unique(y)) < 2) {
+    stop("Elbow kann nicht bestimmt werden: change_rate oder improvement ist konstant.")
+  }
+  
+  x_norm <- (x - min(x)) / (max(x) - min(x))
+  y_norm <- (y - min(y)) / (max(y) - min(y))
+  
+  x1 <- x_norm[1]
+  y1 <- y_norm[1]
+  x2 <- x_norm[length(x_norm)]
+  y2 <- y_norm[length(y_norm)]
+  
+  distances <- abs((y2 - y1) * x_norm -
+                     (x2 - x1) * y_norm +
+                     x2 * y1 -
+                     y2 * x1) /
+    sqrt((y2 - y1)^2 + (x2 - x1)^2)
+  
+  df$elbow_distance <- distances
+  
+  df[which.max(df$elbow_distance), ]
+}
+
+elbow_point <- find_elbow(results_lambda)
+
+cat("\n====================================\n")
+cat("Automatisch gewähltes Elbow-Lambda:", elbow_point$lambda, "\n")
+cat("Änderungsrate:", round(elbow_point$change_rate * 100, 2), "%\n")
+cat("Realisierte Verbesserung:", round(elbow_point$realized_improvement, 4), "\n")
+cat("====================================\n")
+
+
+# ==============================================================================
+# 11. ALTERNATIVE AUSWAHL: MAXIMAL ERLAUBTE ÄNDERUNGSRATE
+# ==============================================================================
+
+target_max_change <- 0.10   # z.B. maximal 10% Änderungen
+
+chosen_by_constraint <- results_lambda %>%
+  filter(change_rate <= target_max_change) %>%
+  slice_max(realized_improvement, n = 1, with_ties = FALSE)
+
+cat("\n====================================\n")
+cat("Auswahl mit maximal", target_max_change * 100, "% Änderungen\n")
+cat("Gewähltes Lambda:", chosen_by_constraint$lambda, "\n")
+cat("Änderungsrate:", round(chosen_by_constraint$change_rate * 100, 2), "%\n")
+cat("Realisierte Verbesserung:", round(chosen_by_constraint$realized_improvement, 4), "\n")
+cat("====================================\n")
+
+
+# ==============================================================================
+# 12. FINALE KARTE
+# ==============================================================================
+
+# Variante A: automatische Elbow-Auswahl
+# chosen_lambda <- elbow_point$lambda
+
+# Variante B: maximale Änderungsrate
+chosen_lambda <- chosen_by_constraint$lambda
+
+final_idx <- apply_change_penalty_idx(SCORE, old_idx, chosen_lambda)
+
+data$c_new <- levels_c[final_idx]
+data$changed <- data$c_new != as.character(data$c)
+
+data$score_current <- current_score
+data$score_new <- SCORE[cbind(seq_len(N), final_idx)]
+data$score_best <- best_score
+
+data$potential_improvement <- potential_improvement
+data$realized_improvement <- data$score_current - data$score_new
+
+final_change_rate <- mean(data$changed)
+final_improvement <- mean(data$realized_improvement)
+
+cat("\n====================================\n")
+cat("Final gewähltes Lambda:", chosen_lambda, "\n")
+cat("Finale Änderungsrate:", round(final_change_rate * 100, 2), "%\n")
+cat("Finale realisierte Verbesserung:", round(final_improvement, 4), "\n")
+cat("====================================\n")
+
+
+# ==============================================================================
+# 13. SPEICHERN
+# ==============================================================================
+
+saveRDS(data, "results_lin_disc/wohnlagenkarte_refined_ohne_alpha.rds")
+saveRDS(results_lambda, "results_lin_disc/lambda_tradeoff_ohne_alpha.rds")
+ggsave("results_lin_disc/elbow_plot_modifikation.png", plot = elbow_plot, width = 8, height = 5)
+
+
+
+
+
+# Alternativer Ansatz links
+
+# Anfang gleich
+
+# ==============================================================================
+# 4. GRUNDLEGENDE DIAGNOSE OHNE PRIOR
+# ==============================================================================
+
+data$c <- as.factor(data$c)
+
+levels_c <- levels(data$c)
+k <- length(levels_c)
+N <- nrow(data)
+
+old_idx <- match(as.character(data$c), levels_c)
+
+current_score <- SCORE[cbind(seq_len(N), old_idx)]
+
+best_idx <- max.col(-SCORE)
+best_score <- SCORE[cbind(seq_len(N), best_idx)]
+
+potential_improvement <- current_score - best_score
+
+cat("\nPotenzielle Verbesserung ohne Prior:\n")
+print(summary(potential_improvement))
+
+cat("\nÄnderungsrate ohne Prior:\n")
+cat(round(mean(best_idx != old_idx) * 100, 2), "%\n")
+
+
+# ==============================================================================
+# 5. PRIOR-ANSATZ MIT DELTA
+# ==============================================================================
+
+# Zusammenhang:
+# delta = log(1 + prior_scale)
+# prior_scale = exp(delta) - 1
+
+apply_prior_delta <- function(SCORE, data, levels_c, delta) {
+  
+  N <- nrow(data)
+  k <- length(levels_c)
+  
+  prior_scale <- exp(delta) - 1
+  
+  PRIOR <- matrix(1, nrow = N, ncol = k)
+  colnames(PRIOR) <- levels_c
+  
+  for (j in seq_len(k)) {
+    PRIOR[, j] <- 1 + prior_scale * (as.character(data$c) == levels_c[j])
+  }
+  
+  # Numerische Stabilisierung
+  SCORE_shifted <- SCORE - apply(SCORE, 1, min)
+  
+  PROB <- exp(-SCORE_shifted) * PRIOR
+  PROB <- PROB / rowSums(PROB)
+  
+  pred_idx <- max.col(PROB)
+  pred <- levels_c[pred_idx]
+  
+  return(list(
+    delta = delta,
+    prior_scale = prior_scale,
+    PROB = PROB,
+    pred_idx = pred_idx,
+    pred = pred
+  ))
+}
+
+
+# ==============================================================================
+# 6. DELTA-WERTE TESTEN
+# ==============================================================================
+
+delta_values <- c(
+  0,
+  0.25, 0.5, 0.75,
+  1, 1.25, 1.5, 1.75,
+  2, 2.25, 2.5, 2.75,
+  3, 3.5, 4, 4.5,
+  5, 6, 7.5, 10
+)
+
+results_prior_delta <- data.frame()
+
+for (delta in delta_values) {
+  
+  res <- apply_prior_delta(
+    SCORE = SCORE,
+    data = data,
+    levels_c = levels_c,
+    delta = delta
+  )
+  
+  pred_idx <- res$pred_idx
+  pred_score <- SCORE[cbind(seq_len(N), pred_idx)]
+  
+  change_rate <- mean(pred_idx != old_idx)
+  realized_improvement <- mean(current_score - pred_score)
+  
+  results_prior_delta <- rbind(results_prior_delta, data.frame(
+    delta = delta,
+    prior_scale = res$prior_scale,
+    change_rate = change_rate,
+    realized_improvement = realized_improvement
+  ))
+}
+
+results_prior_delta <- results_prior_delta %>%
+  arrange(delta)
+
+cat("\nErgebnisse Prior-Ansatz mit delta:\n")
+print(results_prior_delta)
+
+
+# ==============================================================================
+# 7. ELBOW-PLOT
+# ==============================================================================
+
+elbow_plot_delta <- ggplot(
+  results_prior_delta,
+  aes(
+    x = change_rate * 100,
+    y = realized_improvement,
+    label = delta
+  )
+) +
+  geom_line(color = "blue", linewidth = 1) +
+  geom_point(color = "red", size = 1.25)+
+  geom_text(vjust = -0.8, size = 3) +
+  scale_x_reverse() +
+  labs(
+    title = "Linker-Ansatz: Datenverbesserung vs. Änderungsrate",
+    x = "Änderungsrate gegenüber alter Karte (%)",
+    y = "Realisierte SCORE Verbesserung",
+    caption = "Labels zeigen delta = log(1 + prior.scale)"
+  ) +
+  theme_minimal()
+
+print(elbow_plot_delta)
+
+
+# ==============================================================================
+# 8. AUTOMATISCHE ELBOW-AUSWAHL
+# ==============================================================================
+
+find_elbow <- function(df) {
+  
+  df <- df %>%
+    arrange(change_rate)
+  
+  x <- df$change_rate
+  y <- df$realized_improvement
+  
+  if (length(unique(x)) < 2 || length(unique(y)) < 2) {
+    stop("Elbow kann nicht bestimmt werden: change_rate oder improvement ist konstant.")
+  }
+  
+  x_norm <- (x - min(x)) / (max(x) - min(x))
+  y_norm <- (y - min(y)) / (max(y) - min(y))
+  
+  x1 <- x_norm[1]
+  y1 <- y_norm[1]
+  x2 <- x_norm[length(x_norm)]
+  y2 <- y_norm[length(y_norm)]
+  
+  distances <- abs(
+    (y2 - y1) * x_norm -
+      (x2 - x1) * y_norm +
+      x2 * y1 -
+      y2 * x1
+  ) / sqrt((y2 - y1)^2 + (x2 - x1)^2)
+  
+  df$elbow_distance <- distances
+  
+  df[which.max(df$elbow_distance), ]
+}
+
+elbow_point_delta <- find_elbow(results_prior_delta)
+
+cat("\n====================================\n")
+cat("Automatisch gewähltes Elbow-Delta:", elbow_point_delta$delta, "\n")
+cat("Entsprechender Prior Scale:", round(elbow_point_delta$prior_scale, 4), "\n")
+cat("Änderungsrate:", round(elbow_point_delta$change_rate * 100, 2), "%\n")
+cat("Realisierte Verbesserung:", round(elbow_point_delta$realized_improvement, 4), "\n")
+cat("====================================\n")
+
+
+# ==============================================================================
+# 9. ALTERNATIVE AUSWAHL: MAXIMAL ERLAUBTE ÄNDERUNGSRATE
+# ==============================================================================
+
+# Beispiel: maximal 10% Änderungen erlauben
+target_max_change <- 0.10
+
+chosen_by_constraint_delta <- results_prior_delta %>%
+  filter(change_rate <= target_max_change) %>%
+  slice_max(realized_improvement, n = 1, with_ties = FALSE)
+
+cat("\n====================================\n")
+cat("Auswahl mit maximal", target_max_change * 100, "% Änderungen\n")
+cat("Gewähltes Delta:", chosen_by_constraint_delta$delta, "\n")
+cat("Entsprechender Prior Scale:", round(chosen_by_constraint_delta$prior_scale, 4), "\n")
+cat("Änderungsrate:", round(chosen_by_constraint_delta$change_rate * 100, 2), "%\n")
+cat("Realisierte Verbesserung:", round(chosen_by_constraint_delta$realized_improvement, 4), "\n")
+cat("====================================\n")
+
+
+# ==============================================================================
+# 10. FINALE AUSWAHL
+# ==============================================================================
+
+# Variante A: automatische Elbow-Auswahl
+# chosen_delta <- elbow_point_delta$delta
+
+# Variante B: fachliche Nebenbedingung, z.B. maximal 10% Änderungen
+chosen_delta <- chosen_by_constraint_delta$delta
+
+final_res_delta <- apply_prior_delta(
+  SCORE = SCORE,
+  data = data,
+  levels_c = levels_c,
+  delta = chosen_delta
+)
+
+PROB_final_delta <- final_res_delta$PROB
+final_idx_delta <- final_res_delta$pred_idx
+
+data$c_new_delta <- final_res_delta$pred
+data$changed_delta <- data$c_new_delta != as.character(data$c)
+
+data$score_current <- current_score
+data$score_new_delta <- SCORE[cbind(seq_len(N), final_idx_delta)]
+data$score_best <- best_score
+
+data$potential_improvement <- potential_improvement
+data$realized_improvement_delta <- data$score_current - data$score_new_delta
+
+data$prob_max_delta <- apply(PROB_final_delta, 1, max)
+
+# Wahrscheinlichkeiten je Klasse abspeichern
+for (j in seq_len(k)) {
+  prob_name <- paste0("prob_delta_", make.names(levels_c[j]))
+  data[[prob_name]] <- PROB_final_delta[, j]
+}
+
+final_change_rate_delta <- mean(data$changed_delta)
+final_improvement_delta <- mean(data$realized_improvement_delta)
+
+cat("\n====================================\n")
+cat("Final gewähltes Delta:", chosen_delta, "\n")
+cat("Finaler Prior Scale:", round(final_res_delta$prior_scale, 4), "\n")
+cat("Finale Änderungsrate:", round(final_change_rate_delta * 100, 2), "%\n")
+cat("Finale realisierte Verbesserung:", round(final_improvement_delta, 4), "\n")
+cat("====================================\n")
+
+
+# ==============================================================================
+# 11. SPEICHERN
+# ==============================================================================
+
+saveRDS(data, "results_lin_disc/wohnlagenkarte_prior_delta_refined.rds")
+saveRDS(PROB_final_delta, "results_lin_disc/PROB_prior_delta_final.rds")
+saveRDS(results_prior_delta, "results_lin_disc/delta_prior_tradeoff.rds")
+ggsave("results_lin_disc/elbow_plot_modifikation_delta.png", plot = elbow_plot_delta, width = 8, height = 5)
+
+cat("\nGespeichert:\n")
+cat("- results_lin_disc/wohnlagenkarte_prior_delta_refined.rds\n")
+cat("- results_lin_disc/PROB_prior_delta_final.rds\n")
+cat("- results_lin_disc/delta_prior_tradeoff.rds\n")
