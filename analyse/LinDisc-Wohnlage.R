@@ -1741,6 +1741,12 @@ for (i in 1:k) {
   SCORE[, i] <- rowSums(score)
 }
 
+saveRDS(SCORE, "results_lin_disc/SCORE_matrix_final_model.rds")
+
+
+# AB HIER AUSFÜHREN WENN MODELL GLEICH BLEIBEN SOLL
+SCORE <- readRDS("results_lin_disc/SCORE_matrix_final_model.rds")
+
 # ==============================================================================
 # 5. VORBERECHNUNG: AKTUELLE KLASSE UND DATENGETRIEBENE BESTKLASSE
 # ==============================================================================
@@ -1956,9 +1962,9 @@ cat("====================================\n")
 # 13. SPEICHERN
 # ==============================================================================
 
-saveRDS(data, "results_lin_disc/wohnlagenkarte_refined_ohne_alpha.rds")
-saveRDS(results_lambda, "results_lin_disc/lambda_tradeoff_ohne_alpha.rds")
-ggsave("results_lin_disc/elbow_plot_modifikation.png", plot = elbow_plot, width = 8, height = 5)
+saveRDS(data, "results_lin_disc/wohnlagenkarte_refined_lamda.rds")
+saveRDS(results_lambda, "results_lin_disc/lambda_tradeoff.rds")
+ggsave("results_lin_disc/elbow_plot_modifikation_lamda.png", plot = elbow_plot, width = 8, height = 5)
 
 
 
