@@ -1,5 +1,7 @@
 library(here)
 library(dplyr)
+library(tidyr)
+library(stringr)
 source(here("daten_verarbeitung", "daten_einlesen.R"))
 
 
@@ -17,6 +19,8 @@ mapping <- data.frame(
 
 wohnlagen_muc2 <- wohnlagen_muc %>%
   left_join(mapping, by = "EBENE")
+
+
 
 # Daten betrachten
 
@@ -102,8 +106,6 @@ data <- data %>%
   ))
 
 
-
-
 # Modelldatensatz
 model_data <- data %>% 
   select(#gemarkung_,
@@ -124,6 +126,7 @@ model_data <- data %>%
          anteil_gf_sv,
          zentraler_bereich,
         # anteil_beb_sv,
+        laerm,
          geom)
 model_data_complete <- na.omit(model_data) # Zeilen mit NA entfernen
 
@@ -172,14 +175,127 @@ sapply(data_complete, function(x) length(unique(x)))
 
 
 
-# Modelldatensatz nur Pasing
+
+
+
+
+
+
+
+# Modelldatensatz für LDA
+# Koordinaten auf Longitude/Latitude (WGS84) bringen
+model_munich_data<- st_transform(model_data_complete, crs = 4326)
+coords <- st_coordinates(model_munich_data)
+
+model_munich_data <- model_munich_data %>%
+  st_drop_geometry() %>% 
+  mutate(
+    # Koordinaten anhängen
+    s.long = coords[, 1],
+    s.lat  = coords[, 2]
+  ) %>%
+  select(-brw_log, -brw)
+
+
+# Alternative ohne zentrale Lagen
+model_munich_data2 <- st_transform(model_data_complete, crs = 4326)
+coords <- st_coordinates(model_munich_data2)
+
+model_munich_data2 <- model_munich_data2 %>%
+  st_drop_geometry() %>% 
+  mutate(
+    # Koordinaten anhängen
+    s.long = coords[, 1],
+    s.lat  = coords[, 2],
+    
+    # "zentrale" aus dem Text entfernen, Leerzeichen trimmen und als Faktor speichern.
+    # Aus "zentrale durchschnittliche Lage" wird so "durchschnittliche Lage"
+    wohnlage_bedeutung = as.factor(trimws(gsub("zentrale", "", wohnlage_bedeutung, ignore.case = TRUE)))
+  ) 
+
+model_data_hoherlärm <- model_munich_data2 %>%
+  filter(laerm >= 4)
+
+model_munich_data2 <- model_munich_data2 %>%
+  filter(laerm < 4)
+
+# Nur Pasing aus data filtern (LDA)
+data_pasing <- data %>%
+  filter(grepl("Pasing", gemarkung_, ignore.case = TRUE))
+
+# Gleiche Variablenauswahl wie bei model_data
+model_data_pasing <- data_pasing %>% 
+  select(
+    erreichbarkeit_gr10ha_in_metern_adr,
+    erreichbarkeit_innenstadt_in_minuten_adr,
+    erreichbarkeit_naechstehaltestelle_in_minuten_adr,
+    grundschul_num,
+    spielplatz_num,
+    kitakigaho_num,
+    ortszentru_num,
+    wohnlage_ebene,
+    wohnlage_bedeutung,
+    brw,
+    brw_log,
+    anteil_vf_sv,
+    anteil_gf_sv,
+    zentraler_bereich,
+    laerm,
+    geom
+  ) %>%
+  na.omit()
+
+# Für GAM/LDA: Wohnlage numerisch wie zuvor
+model_data_pasing$wohnlage_ebene <- 
+  as.numeric(model_data_pasing$wohnlage_ebene) - 1
+
+
+# Pasing-Version von model_munich_data2 -----------------------------
+
+model_munich_data2_pasing <- st_transform(model_data_pasing, crs = 4326)
+coords_pasing <- st_coordinates(model_munich_data2_pasing)
+
+model_munich_data2_pasing <- model_munich_data2_pasing %>%
+  st_drop_geometry() %>% 
+  mutate(
+    s.long = coords_pasing[, 1],
+    s.lat  = coords_pasing[, 2],
+    wohnlage_bedeutung = as.factor(
+      trimws(gsub("zentrale", "", wohnlage_bedeutung, ignore.case = TRUE))
+    )
+  ) %>%
+  filter(laerm < 4)
+
+
+# Pasing-Version von model_data_hoherlärm ---------------------------
+
+model_data_hoherlärm_pasing <- st_transform(model_data_pasing, crs = 4326)
+coords_hoherlaerm_pasing <- st_coordinates(model_data_hoherlärm_pasing)
+
+model_data_hoherlärm_pasing <- model_data_hoherlärm_pasing %>%
+  st_drop_geometry() %>% 
+  mutate(
+    s.long = coords_hoherlaerm_pasing[, 1],
+    s.lat  = coords_hoherlaerm_pasing[, 2],
+    wohnlage_bedeutung = as.factor(
+      trimws(gsub("zentrale", "", wohnlage_bedeutung, ignore.case = TRUE))
+    )
+  ) %>%
+  filter(laerm >= 4)
+
+saveRDS(model_data_hoherlärm_pasing, "daten/model_data_hoherlärm_pasing.rds")
+saveRDS(model_munich_data2_pasing, "daten/model_munich_data2_pasing.rds")
+
+
+
+# Modelldatensatz nur Pasing (alt)
 
 table(data$gemarkung_)
 
 library(sf)
 library(dplyr)
 
-cat("Erstelle gefilterten Datensatz für Pasing...\n")
+
 
 # 1. Deine Original-Features (die Namen bleiben exakt so!)
 features <- c(
@@ -192,7 +308,8 @@ features <- c(
   "ortszentru_num",
   "spielplatz_num",
   "anteil_vf_sv",
-  "anteil_gf_sv"
+  "anteil_gf_sv",
+  "laerm"
 )
 
 # 2. Filtern nach Pasing aus dem Datensatz 'data'
@@ -238,38 +355,3 @@ write.csv(pasing_matrix_df, file = "daten/pasing_data.csv")
 saveRDS(pasing_matrix_df_ohne_na, file = "daten/pasing_data_ohne_na.rds")
 write.csv(pasing_matrix_df_ohne_na, file = "daten/pasing_data_ohne_na.csv")
 
-
-
-
-
-
-
-# Modelldatensatz für LDA
-# Koordinaten auf Longitude/Latitude (WGS84) bringen
-model_munich_data<- st_transform(model_data_complete, crs = 4326)
-coords <- st_coordinates(model_munich_data)
-
-model_munich_data <- model_munich_data %>%
-  st_drop_geometry() %>% 
-  mutate(
-    # Koordinaten anhängen
-    s.long = coords[, 1],
-    s.lat  = coords[, 2]
-  ) 
-
-
-# Alternative ohne zentrale Lagen
-model_munich_data2 <- st_transform(model_data_complete, crs = 4326)
-coords <- st_coordinates(model_munich_data2)
-
-model_munich_data2 <- model_munich_data2 %>%
-  st_drop_geometry() %>% 
-  mutate(
-    # Koordinaten anhängen
-    s.long = coords[, 1],
-    s.lat  = coords[, 2],
-    
-    # "zentrale" aus dem Text entfernen, Leerzeichen trimmen und als Faktor speichern.
-    # Aus "zentrale durchschnittliche Lage" wird so "durchschnittliche Lage"
-    wohnlage_bedeutung = as.factor(trimws(gsub("zentrale", "", wohnlage_bedeutung, ignore.case = TRUE)))
-  ) 

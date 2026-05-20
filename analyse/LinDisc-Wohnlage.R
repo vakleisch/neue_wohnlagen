@@ -558,7 +558,7 @@ library(mgcv)
 
 # --- 1. DATEN VORBEREITEN (Alle Wohnlagen auf 3 Level reduzieren) ---
 
-data <- model_munich_data[complete.cases(model_munich_data2), ]
+data <- model_munich_data2[complete.cases(model_munich_data2), ]
 
 # WICHTIG: Wir entfernen das Wort "zentrale" aus allen Einträgen. 
 # Dadurch werden "zentrale gute Lage" und "gute Lage" zu einer einzigen Kategorie!
@@ -580,8 +580,9 @@ data$y7  <- data$ortszentru_num
 data$y8  <- data$brw_log
 data$y9  <- data$anteil_vf_sv
 data$y10 <- data$anteil_gf_sv
+data$y11 <- data$laerm
 
-d <- 10  # Anzahl der Variablen auf 10 gesetzt
+d <- 11  # Anzahl der Variablen auf 10 gesetzt
 
 
 # --- 2. GAM MODELL TRAINING ---
@@ -1705,9 +1706,9 @@ model <- gam(
     y5  ~ s(s.long, s.lat, by = c, k = 15) + c,
     y6  ~ s(s.long, s.lat, by = c, k = 15) + c,
     y7  ~ s(s.long, s.lat, by = c, k = 15) + c,
-    y8  ~ s(s.long, s.lat, by = c, k = 15) + c,
     y9  ~ s(s.long, s.lat, by = c, k = 15) + c,
-    y10 ~ s(s.long, s.lat, by = c, k = 15) + c
+    y10 ~ s(s.long, s.lat, by = c, k = 15) + c,
+    y11 ~ s(s.long, s.lat, by = c, k = 15) + c
   ),
   family = mvn(d = d),
   data = data,
@@ -1726,7 +1727,8 @@ INV_VAR <- solve(VAR)
 # 4. SCORE MATRIX (LIKELIHOOD)
 # ==============================================================================
 Y <- cbind(data$y1, data$y2, data$y3, data$y4, data$y5,
-           data$y6, data$y7, data$y8, data$y9, data$y10)
+           data$y6, data$y7, data$y9, data$y10,
+           data$y11)
 
 SCORE <- matrix(0, nrow = N, ncol = k)
 
@@ -2241,3 +2243,3136 @@ cat("\nGespeichert:\n")
 cat("- results_lin_disc/wohnlagenkarte_prior_delta_refined.rds\n")
 cat("- results_lin_disc/PROB_prior_delta_final.rds\n")
 cat("- results_lin_disc/delta_prior_tradeoff.rds\n")
+
+
+
+
+
+
+# Vergleiche Modell mit und ohne lärm
+model1 <- readRDS("results_lin_disc/model_3cat_optimierung.rds")
+model2 <- readRDS("modelle/lindisc_model_beides_3cat.rds")
+data <- readRDS("results_lin_disc/data_beides_3cat.rds")
+library(dplyr)
+
+# ==============================================================================
+# HILFSFUNKTION: SCORE, PREDICTION, ACCURACY, CONFUSION MATRIX
+# ==============================================================================
+
+evaluate_model_accuracy <- function(model, data, y_vars, class_var = "c") {
+  
+  # Klassen
+  levels_c <- levels(as.factor(data[[class_var]]))
+  k <- length(levels_c)
+  N <- nrow(data)
+  d <- length(y_vars)
+  
+  # Response-Matrix
+  Y <- as.matrix(data[, y_vars])
+  
+  # Kovarianzmatrix aus dem Modell
+  VAR <- solve(crossprod(model$family$data$R))
+  INV_VAR <- solve(VAR)
+  
+  # Score-Matrix
+  SCORE <- matrix(0, nrow = N, ncol = k)
+  colnames(SCORE) <- levels_c
+  
+  for (j in seq_len(k)) {
+    
+    tmp <- data
+    tmp[[class_var]] <- levels_c[j]
+    
+    fit <- predict(model, newdata = tmp)
+    
+    diff <- Y - fit
+    
+    score_temp <- (diff %*% INV_VAR) * diff
+    SCORE[, j] <- rowSums(score_temp)
+  }
+  
+  # Wahrscheinlichkeit aus Scores
+  SCORE_shifted <- SCORE - apply(SCORE, 1, min)
+  
+  PROB <- exp(-SCORE_shifted)
+  PROB <- PROB / rowSums(PROB)
+  
+  colnames(PROB) <- levels_c
+  
+  # Vorhersage
+  pred_idx <- max.col(PROB)
+  pred <- factor(levels_c[pred_idx], levels = levels_c)
+  
+  truth <- factor(as.character(data[[class_var]]), levels = levels_c)
+  
+  # Accuracy
+  accuracy <- mean(pred == truth)
+  
+  # Confusion Matrix
+  conf_mat <- table(
+    Wahrheit = truth,
+    Vorhersage = pred
+  )
+  
+  # Klassenweise Accuracy / Trefferquote
+  class_accuracy <- diag(prop.table(conf_mat, margin = 1))
+  
+  class_accuracy_df <- data.frame(
+    Wohnlage = names(class_accuracy),
+    Trefferquote = as.numeric(class_accuracy)
+  )
+  
+  return(list(
+    SCORE = SCORE,
+    PROB = PROB,
+    prediction = pred,
+    truth = truth,
+    accuracy = accuracy,
+    confusion_matrix = conf_mat,
+    class_accuracy = class_accuracy_df
+  ))
+}
+
+
+y_vars_model1 <- c(
+  "y1", "y2", "y3", "y4", "y5",
+  "y6", "y7", "y9", "y10",
+  "y11"
+)
+
+eval_model1 <- evaluate_model_accuracy(
+  model = model1,
+  data = data,
+  y_vars = y_vars_model1,
+  class_var = "c"
+)
+
+cat("\n==============================\n")
+cat("MODEL 1 MIT LÄRM\n")
+cat("==============================\n")
+cat("Training Accuracy:", round(eval_model1$accuracy * 100, 2), "%\n\n")
+
+print(eval_model1$confusion_matrix)
+print(eval_model1$class_accuracy)
+
+
+#y_vars_model2 <- c(
+#  "y1", "y2", "y3", "y4", "y5",
+#  "y6", "y7", "y8", "y9", "y10"
+#)
+
+##eval_model2 <- evaluate_model_accuracy(
+#  model = model2,
+#  data = data,
+#  y_vars = y_vars_model2,
+#  class_var = "c"
+#)
+
+#cat("\n==============================\n")
+#cat("MODEL 2 OHNE LÄRM\n")
+#cat("==============================\n")
+#cat("Training Accuracy:", round(eval_model2$accuracy * 100, 2), "%\n\n")
+
+#print(eval_model2$confusion_matrix)
+#print(eval_model2$class_accuracy)
+
+
+#vergleich <- data.frame(
+#  Modell = c("Model1_mit_Laerm", "Model2_ohne_Laerm"),
+#  Accuracy = c(eval_model1$accuracy, eval_model2$accuracy),
+#  Accuracy_Prozent = round(c(eval_model1$accuracy, eval_model2$accuracy) * 100, 2)
+#)
+
+#print(vergleich)
+
+
+# Interaktive karten (mit und ohne lärm ohne prior)
+library(mgcv)
+library(dplyr)
+library(leaflet)
+library(htmlwidgets)
+library(sf)
+library(parallel)
+
+# ==============================================================================
+# 1. BASISDATEN
+# ==============================================================================
+
+wohnlage_grenzen_wgs <- readRDS("daten/grenzen.rds")
+wohnlagen_muc_wgs <- readRDS("daten/wohnlagen_flächen.rds")
+
+# Basisdatensatz ist weiterhin data
+data$c <- as.factor(data$c)
+
+levels_c <- levels(data$c)
+k <- length(levels_c)
+N <- nrow(data)
+
+# ==============================================================================
+# 2. VARIABLEN FÜR DIE BEIDEN MODELLE DEFINIEREN
+# ==============================================================================
+
+# Modell 1: MIT Lärm
+# Bitte anpassen, falls deine Lärmvariable anders heißt, z.B. "y11" oder "laerm_eisenbahn"
+y_vars_model1 <- c(
+  "y1", "y2", "y3", "y4", "y5",
+  "y6", "y7", "y9", "y10",
+  "y11"   # <- falls Lärm als y11 im Modell ist
+)
+
+# Modell 2: OHNE Lärm
+y_vars_model2 <- c(
+  "y1", "y2", "y3", "y4", "y5",
+  "y6", "y7", "y8", "y9", "y10"
+)
+
+# ==============================================================================
+# 3. FARBEN
+# ==============================================================================
+
+wohnlage_farben_3 <- c(
+  "durchschnittliche Lage" = "#e8f5a4",
+  "gute Lage"              = "#afe391",
+  "beste Lage"             = "#7FCDBB"
+)
+
+# ==============================================================================
+# 4. FLÄCHEN AUF 3 KATEGORIEN REDUZIEREN
+# ==============================================================================
+
+wohnlagen_muc_wgs_3cat <- wohnlagen_muc_wgs %>%
+  mutate(
+    Wohnlage = trimws(gsub("zentrale", "", Wohnlage, ignore.case = TRUE)),
+    color = unname(wohnlage_farben_3[Wohnlage])
+  ) %>%
+  group_by(Wohnlage, color) %>%
+  summarise(geometry = st_union(geometry), .groups = "drop")
+
+cat("Flächen erfolgreich auf 3 Kategorien reduziert und zusammengeführt.\n")
+
+
+# ==============================================================================
+# 5. FUNKTION: SCORE UND PROB FÜR EIN MODELL BERECHNEN
+# ==============================================================================
+
+compute_prob_from_model <- function(model, data, y_vars, class_var = "c", cl = NULL) {
+  
+  levels_c <- levels(as.factor(data[[class_var]]))
+  k <- length(levels_c)
+  N <- nrow(data)
+  
+  Y <- as.matrix(data[, y_vars])
+  
+  VAR <- solve(crossprod(model$family$data$R))
+  INV_VAR <- solve(VAR)
+  
+  SCORE <- matrix(0, nrow = N, ncol = k)
+  colnames(SCORE) <- levels_c
+  
+  for (j in seq_len(k)) {
+    
+    cat("Berechne Scores für Klasse", j, "von", k, ":", levels_c[j], "\n")
+    
+    tmp <- data
+    tmp[[class_var]] <- levels_c[j]
+    
+    if (is.null(cl)) {
+      fit <- predict(model, newdata = tmp)
+    } else {
+      fit <- predict(model, newdata = tmp, cluster = cl)
+    }
+    
+    diff <- Y - fit
+    
+    score_temp <- (diff %*% INV_VAR) * diff
+    SCORE[, j] <- rowSums(score_temp)
+  }
+  
+  SCORE_shifted <- SCORE - apply(SCORE, 1, min)
+  
+  PROB <- exp(-SCORE_shifted)
+  PROB <- PROB / rowSums(PROB)
+  colnames(PROB) <- levels_c
+  
+  return(list(
+    SCORE = SCORE,
+    PROB = PROB
+  ))
+}
+
+# ==============================================================================
+# 6. FUNKTION: LEAFLET-KARTE FÜR EIN MODELL ERSTELLEN
+# ==============================================================================
+
+create_model_map <- function(data_map,
+                             PROB,
+                             model_label,
+                             output_file) {
+  
+  levels_c <- levels(data_map$c)
+  
+  # Dynamische Wahrscheinlichkeiten
+  data_map <- data_map %>%
+    mutate(
+      prob_durchschnitt = PROB[, which(levels_c == "durchschnittliche Lage")],
+      prob_gute         = PROB[, which(levels_c == "gute Lage")],
+      prob_beste        = PROB[, which(levels_c == "beste Lage")],
+      
+      Wohnlage_wahr = as.character(c),
+      Wohnlage_vorhersage = levels_c[max.col(PROB)],
+      
+      Korrekt = Wohnlage_wahr == Wohnlage_vorhersage,
+      
+      prob_max = apply(PROB, 1, max),
+      
+      color = unname(wohnlage_farben_3[Wohnlage_vorhersage])
+    )
+  
+  # Popups
+  erstelle_popup <- function(df) {
+    paste0(
+      "<b>Modell:</b> ", model_label, "<br>",
+      "<b>Wahre Lage:</b> ", df$Wohnlage_wahr, "<br>",
+      "<b>Vorhersage:</b> <span style='color:",
+      ifelse(df$Korrekt, "black", "red"),
+      ";'>", df$Wohnlage_vorhersage, "</span><br>",
+      "<b>Max. Wahrscheinlichkeit:</b> ", round(df$prob_max * 100, 1), " %<br>",
+      "<hr>",
+      
+      "<b>Berechnete Dichte-Wahrscheinlichkeiten:</b><br>",
+      "Durchschnittliche Lage: ", round(df$prob_durchschnitt * 100, 1), " %<br>",
+      "Gute Lage: ", round(df$prob_gute * 100, 1), " %<br>",
+      "Beste Lage: ", round(df$prob_beste * 100, 1), " %<br>",
+      "<hr>",
+      
+      "<i>Infrastruktur-Werte:</i><br>",
+      "y1: ", df$y1, "<br>",
+      "y2: ", df$y2, "<br>",
+      "y3: ", df$y3, "<br>",
+      "y4: ", df$y4, "<br>",
+      "y5: ", df$y5, "<br>",
+      "y6: ", df$y6, "<br>",
+      "y7: ", df$y7, "<br>",
+      "y8: ", df$y8, "<br>",
+      "y9: ", df$y9, "<br>",
+      "y10: ", df$y10, "<br>"
+    )
+  }
+  
+  data_map$popup_text <- erstelle_popup(data_map)
+  
+  daten_korrekt <- data_map %>% filter(Korrekt == TRUE)
+  daten_fehler  <- data_map %>% filter(Korrekt == FALSE)
+  
+  accuracy <- mean(data_map$Korrekt)
+  
+  cat("\n", model_label, "\n")
+  cat("Accuracy:", round(accuracy * 100, 2), "%\n")
+  cat("=>", nrow(daten_korrekt), "korrekte Vorhersagen,",
+      nrow(daten_fehler), "Fehler.\n")
+  
+  # Karte
+  karte <- leaflet(options = leafletOptions(preferCanvas = TRUE)) %>%
+    addProviderTiles("CartoDB.Positron") %>%
+    
+    addPolygons(
+      data = wohnlagen_muc_wgs_3cat,
+      fillColor = ~color,
+      fillOpacity = 0.6,
+      color = "black",
+      weight = 0.5,
+      label = ~Wohnlage,
+      group = "Wohnlagen (Flächen)"
+    ) %>%
+    
+    addPolylines(
+      data = wohnlage_grenzen_wgs,
+      color = "black",
+      weight = 0.5,
+      group = "Wohnlagen (Grenzen)"
+    ) %>%
+    
+    addCircleMarkers(
+      data = daten_korrekt,
+      lng = ~s.long,
+      lat = ~s.lat,
+      fillColor = ~color,
+      fillOpacity = 0.9,
+      color = "black",
+      stroke = TRUE,
+      weight = 1,
+      radius = 5,
+      popup = ~popup_text,
+      group = "Korrekt"
+    ) %>%
+    
+    addCircleMarkers(
+      data = daten_fehler,
+      lng = ~s.long,
+      lat = ~s.lat,
+      fillColor = ~color,
+      fillOpacity = 1,
+      color = "red",
+      stroke = TRUE,
+      weight = 2.5,
+      radius = 7,
+      popup = ~popup_text,
+      group = "Fehler"
+    ) %>%
+    
+    addLegend(
+      position = "bottomright",
+      colors = unname(wohnlage_farben_3),
+      labels = names(wohnlage_farben_3),
+      title = paste0("Vorhersage<br>", model_label),
+      opacity = 1
+    ) %>%
+    
+    addLayersControl(
+      overlayGroups = c("Wohnlagen (Flächen)", "Wohnlagen (Grenzen)", "Fehler", "Korrekt"),
+      options = layersControlOptions(collapsed = FALSE)
+    )
+  
+  if (!dir.exists("results_lin_disc")) dir.create("results_lin_disc")
+  
+  saveWidget(karte, file = output_file, selfcontained = TRUE)
+  
+  cat("✓ Karte gespeichert unter:", output_file, "\n")
+  
+  return(list(
+    map_data = data_map,
+    map = karte,
+    accuracy = accuracy
+  ))
+}
+
+# ==============================================================================
+# 7. SCORE UND PROB FÜR BEIDE MODELLE BERECHNEN
+# ==============================================================================
+
+cl <- makeCluster(max(1, detectCores() - 1))
+
+cat("\nBerechne Wahrscheinlichkeiten für Model 1 mit Lärm...\n")
+
+res_model1 <- compute_prob_from_model(
+  model = model1,
+  data = data,
+  y_vars = y_vars_model1,
+  class_var = "c",
+  cl = cl
+)
+
+cat("\nBerechne Wahrscheinlichkeiten für Model 2 ohne Lärm...\n")
+
+#res_model2 <- compute_prob_from_model(
+#  model = model2,
+#  data = data,
+#  y_vars = y_vars_model2,
+#  class_var = "c",
+#  cl = cl
+#)
+
+stopCluster(cl)
+
+# ==============================================================================
+# 8. KARTEN ERSTELLEN
+# ==============================================================================
+
+karte_model1 <- create_model_map(
+  data_map = data,
+  PROB = res_model1$PROB,
+  model_label = "Model 1 mit Lärm",
+  output_file = "results_lin_disc/karte_model1_mit_laerm.html"
+)
+
+#karte_model2 <- create_model_map(
+#  data_map = data,
+#  PROB = res_model2$PROB,
+#  model_label = "Model 2 ohne Lärm",
+#  output_file = "results_lin_disc/karte_model2_ohne_laerm.html"
+#)
+
+# ==============================================================================
+# 9. ERGEBNISSE SPEICHERN
+# ==============================================================================
+
+saveRDS(res_model1$SCORE, "results_lin_disc/SCORE_model1_mit_laerm.rds")
+saveRDS(res_model1$PROB,  "results_lin_disc/PROB_model1_mit_laerm.rds")
+
+#saveRDS(res_model2$SCORE, "results_lin_disc/SCORE_model2_ohne_laerm.rds")
+#saveRDS(res_model2$PROB,  "results_lin_disc/PROB_model2_ohne_laerm.rds")
+
+saveRDS(karte_model1$map_data, "results_lin_disc/map_data_model1_mit_laerm.rds")
+#saveRDS(karte_model2$map_data, "results_lin_disc/map_data_model2_ohne_laerm.rds")
+
+#vergleich_accuracy <- data.frame(
+#  Modell = c("Model 1 mit Lärm", "Model 2 ohne Lärm"),
+ # Accuracy = c(karte_model1$accuracy, karte_model2$accuracy),
+#  Accuracy_Prozent = round(c(karte_model1$accuracy, karte_model2$accuracy) * 100, 2)
+#)
+
+#print(vergleich_accuracy)
+
+#write.csv(
+#  vergleich_accuracy,
+#  "results_lin_disc/accuracy_vergleich_model1_model2.csv",
+#  row.names = FALSE
+#)
+
+
+
+# Nochmla überarbeitet
+library(dplyr)
+library(leaflet)
+library(htmlwidgets)
+library(sf)
+
+# ==============================================================================
+# 1. RÄUMLICHE DATEN LADEN
+# ==============================================================================
+
+wohnlage_grenzen_wgs <- readRDS("daten/grenzen.rds")
+wohnlagen_muc_wgs <- readRDS("daten/wohnlagen_flächen.rds")
+
+# Falls data$c noch kein Faktor ist
+data$c <- as.factor(data$c)
+levels_c <- levels(data$c)
+
+# ==============================================================================
+# 2. FARBEN
+# ==============================================================================
+
+wohnlage_farben_3 <- c(
+  "durchschnittliche Lage" = "#e8f5a4",
+  "gute Lage"              = "#afe391",
+  "beste Lage"             = "#7FCDBB"
+)
+
+# ==============================================================================
+# 3. FLÄCHEN AUF 3 KATEGORIEN REDUZIEREN
+# ==============================================================================
+
+wohnlagen_muc_wgs_3cat <- wohnlagen_muc_wgs %>%
+  mutate(
+    Wohnlage = trimws(gsub("zentrale", "", Wohnlage, ignore.case = TRUE)),
+    color = unname(wohnlage_farben_3[Wohnlage])
+  ) %>%
+  group_by(Wohnlage, color) %>%
+  summarise(geometry = st_union(geometry), .groups = "drop")
+
+# ==============================================================================
+# 4. MAP-DATEN FÜR MODEL 1 AUFBAUEN
+#    WICHTIG: hier wird nur res_model1$PROB verwendet, nichts neu berechnet
+# ==============================================================================
+
+PROB_map1 <- res_model1$PROB
+
+map_data_model1 <- data %>%
+  mutate(
+    prob_durchschnitt = PROB_map1[, which(levels_c == "durchschnittliche Lage")],
+    prob_gute         = PROB_map1[, which(levels_c == "gute Lage")],
+    prob_beste        = PROB_map1[, which(levels_c == "beste Lage")],
+    
+    Wohnlage_wahr = as.character(c),
+    Wohnlage_vorhersage = levels_c[max.col(PROB_map1)],
+    
+    Korrekt = (Wohnlage_wahr == Wohnlage_vorhersage),
+    
+    prob_max = apply(PROB_map1, 1, max),
+    
+    color = unname(wohnlage_farben_3[Wohnlage_vorhersage])
+  )
+
+# ==============================================================================
+# 5. POPUPS MIT ANSCHAULICHEN LABELS + LÄRM
+# ==============================================================================
+
+erstelle_popup_model1 <- function(df) {
+  paste0(
+    "<b>Modell:</b> Model 1 mit Lärm<br>",
+    "<b>Wahre Lage:</b> ", df$Wohnlage_wahr, "<br>",
+    "<b>Vorhersage:</b> <span style='color:",
+    ifelse(df$Korrekt, "black", "red"),
+    ";'>", df$Wohnlage_vorhersage, "</span><br>",
+    "<b>Max. Wahrscheinlichkeit:</b> ", round(df$prob_max * 100, 1), " %<br>",
+    "<hr>",
+    
+    "<b>Berechnete Dichte-Wahrscheinlichkeiten:</b><br>",
+    "Durchschnittliche Lage: ", round(df$prob_durchschnitt * 100, 1), " %<br>",
+    "Gute Lage: ", round(df$prob_gute * 100, 1), " %<br>",
+    "Beste Lage: ", round(df$prob_beste * 100, 1), " %<br>",
+    "<hr>",
+    
+    "<i>Infrastruktur-/Lagewerte:</i><br>",
+    "Park (&gt;10ha): ", df$y1, " m<br>",
+    "Innenstadt: ", df$y2, " min<br>",
+    "Haltestelle: ", df$y3, " min<br>",
+    "Grundschule: ", df$y4, "<br>",
+    "Spielplatz: ", df$y5, "<br>",
+    "Kita: ", df$y6, "<br>",
+    "Ortszentrum: ", df$y7, "<br>",
+    "BRW (log): ", round(df$y8, 3), "<br>",
+    "Anteil VF SV: ", round(df$y9, 3), "<br>",
+    "Anteil GF SV: ", round(df$y10, 3), "<br>",
+    "Lärm: ", df$y11, "<br>"
+  )
+}
+
+map_data_model1$popup_text <- erstelle_popup_model1(map_data_model1)
+
+# ==============================================================================
+# 6. AUFTEILEN IN KORREKT / FEHLER
+# ==============================================================================
+
+daten_korrekt_model1 <- map_data_model1 %>% filter(Korrekt == TRUE)
+daten_fehler_model1  <- map_data_model1 %>% filter(Korrekt == FALSE)
+
+cat("Model 1 mit Lärm:\n")
+cat("=>", nrow(daten_korrekt_model1), "korrekte Vorhersagen,",
+    nrow(daten_fehler_model1), "Fehler.\n")
+
+# ==============================================================================
+# 7. LEAFLET-KARTE FÜR MODEL 1
+# ==============================================================================
+
+karte_model1_neu <- leaflet(options = leafletOptions(preferCanvas = TRUE)) %>%
+  addProviderTiles("CartoDB.Positron") %>%
+  
+  addPolygons(
+    data = wohnlagen_muc_wgs_3cat,
+    fillColor = ~color,
+    fillOpacity = 0.6,
+    color = "black",
+    weight = 0.5,
+    label = ~Wohnlage,
+    group = "Wohnlagen (Flächen)"
+  ) %>%
+  
+  addPolylines(
+    data = wohnlage_grenzen_wgs,
+    color = "black",
+    weight = 0.5,
+    group = "Wohnlagen (Flächen)"
+  ) %>%
+  
+  addCircleMarkers(
+    data = daten_korrekt_model1,
+    lng = ~s.long, lat = ~s.lat,
+    fillColor = ~color,
+    fillOpacity = 0.9,
+    color = "black",
+    stroke = TRUE,
+    weight = 1,
+    radius = 6,
+    popup = ~popup_text,
+    group = "Korrekt"
+  ) %>%
+  
+  addCircleMarkers(
+    data = daten_fehler_model1,
+    lng = ~s.long, lat = ~s.lat,
+    fillColor = ~color,
+    fillOpacity = 1,
+    color = "red",
+    stroke = TRUE,
+    weight = 2.5,
+    radius = 7,
+    popup = ~popup_text,
+    group = "Fehler"
+  ) %>%
+  
+  addLegend(
+    position = "bottomright",
+    colors = unname(wohnlage_farben_3),
+    labels = names(wohnlage_farben_3),
+    title = "Vorhersage<br>Model 1 mit Lärm",
+    opacity = 1
+  ) %>%
+  
+  addLayersControl(
+    overlayGroups = c("Wohnlagen (Flächen)", "Fehler", "Korrekt"),
+    options = layersControlOptions(collapsed = FALSE)
+  )
+
+saveWidget(
+  karte_model1_neu,
+  file = "results_lin_disc/karte_model1_mit_laerm_popup_neu.html",
+  selfcontained = TRUE
+)
+
+cat("✓ Neue Karte für Model 1 mit Lärm gespeichert.\n")
+
+
+
+
+
+
+
+
+
+
+
+
+# Interaktive karte finales Modell mit prior 
+library(dplyr)
+library(leaflet)
+library(htmlwidgets)
+library(sf)
+
+# ==============================================================================
+# 0. EINSTELLUNGEN
+# ==============================================================================
+
+chosen_lambda <- 2.75
+
+prior_scale <- exp(chosen_lambda) - 1
+
+cat("Gewähltes lambda:", chosen_lambda, "\n")
+cat("Daraus berechneter prior.scale:", round(prior_scale, 4), "\n")
+
+# ==============================================================================
+# 1. DATEN LADEN / VORBEREITEN
+# ==============================================================================
+
+data <- readRDS("results_lin_disc/data_beides_3cat.rds")
+wohnlage_grenzen_wgs <- readRDS("daten/grenzen.rds")
+wohnlagen_muc_wgs   <- readRDS("daten/wohnlagen_flächen.rds")
+
+# Basisdatensatz ist weiterhin data
+data$c <- as.factor(data$c)
+
+levels_c <- levels(data$c)
+k <- length(levels_c)
+N <- nrow(data)
+
+# ==============================================================================
+# 2. SCORE-MATRIZEN LADEN
+# ==============================================================================
+
+# Passe Dateinamen an, falls sie bei dir anders heißen
+SCORE_model1 <- readRDS("results_lin_disc/SCORE_model1_mit_laerm.rds")
+SCORE_model2 <- readRDS("results_lin_disc/SCORE_model2_ohne_laerm.rds")
+
+colnames(SCORE_model1) <- levels_c
+colnames(SCORE_model2) <- levels_c
+
+# ==============================================================================
+# 3. FARBEN
+# ==============================================================================
+
+wohnlage_farben_3 <- c(
+  "durchschnittliche Lage" = "#e8f5a4",
+  "gute Lage"              = "#afe391",
+  "beste Lage"             = "#7FCDBB"
+)
+
+# ==============================================================================
+# 4. FLÄCHEN AUF 3 KATEGORIEN REDUZIEREN
+# ==============================================================================
+
+wohnlagen_muc_wgs_3cat <- wohnlagen_muc_wgs %>%
+  mutate(
+    Wohnlage = trimws(gsub("zentrale", "", Wohnlage, ignore.case = TRUE)),
+    color = unname(wohnlage_farben_3[Wohnlage])
+  ) %>%
+  group_by(Wohnlage, color) %>%
+  summarise(geometry = st_union(geometry), .groups = "drop")
+
+cat("Flächen erfolgreich auf 3 Kategorien reduziert und zusammengeführt.\n")
+
+# ==============================================================================
+# 5. FUNKTION: PRIOR-TRANSFORMATION
+# ==============================================================================
+
+apply_prior_lambda <- function(SCORE, data, levels_c, lambda) {
+  
+  N <- nrow(data)
+  k <- length(levels_c)
+  
+  prior_scale <- exp(lambda) - 1
+  
+  # Prior-Matrix
+  PRIOR <- matrix(1, nrow = N, ncol = k)
+  colnames(PRIOR) <- levels_c
+  
+  for (j in seq_len(k)) {
+    PRIOR[, j] <- 1 + prior_scale * (as.character(data$c) == levels_c[j])
+  }
+  
+  # Numerische Stabilisierung
+  SCORE_shifted <- SCORE - apply(SCORE, 1, min)
+  
+  # Posterior-artige Wahrscheinlichkeiten
+  PROB_prior <- exp(-SCORE_shifted) * PRIOR
+  PROB_prior <- PROB_prior / rowSums(PROB_prior)
+  
+  colnames(PROB_prior) <- levels_c
+  
+  pred_idx <- max.col(PROB_prior)
+  pred <- levels_c[pred_idx]
+  
+  old_idx <- match(as.character(data$c), levels_c)
+  
+  current_score <- SCORE[cbind(seq_len(N), old_idx)]
+  new_score     <- SCORE[cbind(seq_len(N), pred_idx)]
+  best_score    <- apply(SCORE, 1, min)
+  
+  return(list(
+    lambda = lambda,
+    prior_scale = prior_scale,
+    PROB = PROB_prior,
+    pred_idx = pred_idx,
+    pred = pred,
+    current_score = current_score,
+    new_score = new_score,
+    best_score = best_score,
+    realized_improvement = current_score - new_score,
+    potential_improvement = current_score - best_score
+  ))
+}
+
+# ==============================================================================
+# 6. FUNKTION: LEAFLET-KARTE NACH PRIOR-TRANSFORMATION
+# ==============================================================================
+
+create_prior_map <- function(data_base,
+                             prior_res,
+                             model_label,
+                             output_file,
+                             include_laerm = FALSE) {
+  
+  PROB <- prior_res$PROB
+  levels_c <- levels(data_base$c)
+  
+  map_data <- data_base %>%
+    mutate(
+      prob_durchschnitt = PROB[, which(levels_c == "durchschnittliche Lage")],
+      prob_gute         = PROB[, which(levels_c == "gute Lage")],
+      prob_beste        = PROB[, which(levels_c == "beste Lage")],
+      
+      Wohnlage_alt = as.character(c),
+      Wohnlage_neu = prior_res$pred,
+      
+      Geaendert = Wohnlage_alt != Wohnlage_neu,
+      
+      prob_max = apply(PROB, 1, max),
+      
+      score_alt = prior_res$current_score,
+      score_neu = prior_res$new_score,
+      score_best = prior_res$best_score,
+      realized_improvement = prior_res$realized_improvement,
+      potential_improvement = prior_res$potential_improvement,
+      
+      color = unname(wohnlage_farben_3[Wohnlage_neu])
+    )
+  
+  # Optional schöner Lärm-Text
+  if (include_laerm && "y11" %in% names(map_data)) {
+    map_data <- map_data %>%
+      mutate(
+        Laerm_Label = case_when(
+          y11 == 1 ~ "1 - sehr gering",
+          y11 == 2 ~ "2 - gering",
+          y11 == 3 ~ "3 - mittel",
+          y11 == 4 ~ "4 - hoch",
+          y11 == 5 ~ "5 - sehr hoch",
+          TRUE ~ as.character(y11)
+        )
+      )
+  }
+  
+  # Popups
+  erstelle_popup <- function(df) {
+    
+    laerm_text <- ""
+    
+    if (include_laerm && "y11" %in% names(df)) {
+      laerm_text <- paste0(
+        "Lärm: ", df$Laerm_Label, "<br>"
+      )
+    }
+    
+    paste0(
+      "<b>Alte Lage:</b> ", df$Wohnlage_alt, "<br>",
+      "<b>Neue Lage:</b> <span style='color:",
+      ifelse(df$Geaendert, "red", "black"),
+      ";'><b>", df$Wohnlage_neu, "</b></span><br>",
+      "<b>Geändert:</b> ", ifelse(df$Geaendert, "JA", "nein"), "<br>",
+      "<hr>",
+      
+      "<b>Prior-transformierte Wahrscheinlichkeiten:</b><br>",
+      "Durchschnittliche Lage: ", round(df$prob_durchschnitt * 100, 1), " %<br>",
+      "Gute Lage: ", round(df$prob_gute * 100, 1), " %<br>",
+      "Beste Lage: ", round(df$prob_beste * 100, 1), " %<br>",
+      
+      "<i>Infrastruktur-/Lagewerte:</i><br>",
+      "Distanz Park (&gt;10ha): ", df$y1, " m<br>",
+      "Fahrzeit Innenstadt: ", df$y2, " min<br>",
+      "Gehminuten Haltestelle: ", df$y3, " min<br>",
+      "Fußweg Grundschule: ", df$y4, "<br>",
+      "Fußweg Spielplatz: ", df$y5, "<br>",
+      "Fußweg Kita: ", df$y6, "<br>",
+      "Fußweg Ortszentrum: ", df$y7, "<br>",
+      "Anteil Verkehrsfläche: ", round(df$y9, 3), "<br>",
+      "Anteil Grünfläche: ", round(df$y10, 3), "<br>",
+      laerm_text
+    )
+  }
+  
+  map_data$popup_text <- erstelle_popup(map_data)
+  
+  daten_unveraendert <- map_data %>% filter(Geaendert == FALSE)
+  daten_geaendert    <- map_data %>% filter(Geaendert == TRUE)
+  
+  change_rate <- mean(map_data$Geaendert)
+  realized_improvement_mean <- mean(map_data$realized_improvement)
+  
+  cat("\n", model_label, "\n")
+  cat("Lambda:", prior_res$lambda, "\n")
+  cat("Prior scale:", round(prior_res$prior_scale, 4), "\n")
+  cat("Änderungsrate:", round(change_rate * 100, 2), "%\n")
+  cat("Realisierte Verbesserung:", round(realized_improvement_mean, 4), "\n")
+  cat("=>", nrow(daten_geaendert), "geänderte Punkte,",
+      nrow(daten_unveraendert), "unveränderte Punkte.\n")
+  
+  karte <- leaflet(options = leafletOptions(preferCanvas = TRUE)) %>%
+    addProviderTiles("CartoDB.Positron") %>%
+    
+    addPolygons(
+      data = wohnlagen_muc_wgs_3cat,
+      fillColor = ~color,
+      fillOpacity = 0.6,
+      color = "black",
+      weight = 0.5,
+      label = ~Wohnlage,
+      group = "Wohnlagen (Flächen)"
+    ) %>%
+    
+    addPolylines(
+      data = wohnlage_grenzen_wgs,
+      color = "black",
+      weight = 0.5,
+      group = "Wohnlagen (Grenzen)"
+    ) %>%
+    
+    addCircleMarkers(
+      data = daten_unveraendert,
+      lng = ~s.long,
+      lat = ~s.lat,
+      fillColor = ~color,
+      fillOpacity = 0.85,
+      color = "black",
+      stroke = TRUE,
+      weight = 1,
+      radius = 5,
+      popup = ~popup_text,
+      group = "Unverändert"
+    ) %>%
+    
+    addCircleMarkers(
+      data = daten_geaendert,
+      lng = ~s.long,
+      lat = ~s.lat,
+      fillColor = ~color,
+      fillOpacity = 1,
+      color = "red",
+      stroke = TRUE,
+      weight = 2.5,
+      radius = 7,
+      popup = ~popup_text,
+      group = "Geändert"
+    ) %>%
+    
+    addLegend(
+      position = "bottomright",
+      colors = unname(wohnlage_farben_3),
+      labels = names(wohnlage_farben_3),
+      title = paste0("Neue Lage<br>", model_label),
+      opacity = 1
+    ) %>%
+    
+    addLayersControl(
+      overlayGroups = c(
+        "Wohnlagen (Flächen)",
+        "Wohnlagen (Grenzen)",
+        "Geändert",
+        "Unverändert"
+      ),
+      options = layersControlOptions(collapsed = FALSE)
+    )
+  
+  saveWidget(karte, file = output_file, selfcontained = TRUE)
+  
+  cat("✓ Karte gespeichert unter:", output_file, "\n")
+  
+  return(list(
+    map_data = map_data,
+    map = karte,
+    change_rate = change_rate,
+    realized_improvement = realized_improvement_mean
+  ))
+}
+
+
+# ==============================================================================
+# 7. PRIOR-TRANSFORMATION FÜR BEIDE MODELLE  (das ausführen wenn anderes lambda)
+# ==============================================================================
+
+prior_model1 <- apply_prior_lambda(
+  SCORE = SCORE_model1,
+  data = data,
+  levels_c = levels_c,
+  lambda = chosen_lambda
+)
+
+#prior_model2 <- apply_prior_lambda(
+#  SCORE = SCORE_model2,
+#  data = data,
+#  levels_c = levels_c,
+#  lambda = chosen_lambda
+#)
+
+# ==============================================================================
+# 8. KARTEN ERSTELLEN UND SPEICHERN
+# ==============================================================================
+
+karte_prior_model1 <- create_prior_map(
+  data_base = data,
+  prior_res = prior_model1,
+  model_label = "Model 1 mit Lärm",
+  output_file = paste0(
+    "results_lin_disc/karte_prior_model1_mit_laerm_lambda_",
+    gsub("\\.", "_", as.character(chosen_lambda)),
+    ".html"
+  ),
+  include_laerm = TRUE
+)
+
+#karte_prior_model2 <- create_prior_map(
+#  data_base = data,
+#  prior_res = prior_model2,
+#  model_label = "Model 2 ohne Lärm",
+#  output_file = paste0(
+#    "results_lin_disc/karte_prior_model2_ohne_laerm_lambda_",
+#    gsub("\\.", "_", as.character(chosen_lambda)),
+#    ".html"
+#  ),
+#  include_laerm = FALSE
+#)
+
+# ==============================================================================
+# 9. OUTPUTS SPEICHERN
+# ==============================================================================
+
+
+saveRDS(
+  karte_prior_model1$map_data,
+  paste0(
+    "results_lin_disc/map_data_prior_model1_mit_laerm_lambda_",
+    gsub("\\.", "_", as.character(chosen_lambda)),
+    ".rds"
+  )
+)
+
+#saveRDS(
+#  karte_prior_model2$map_data,
+#  paste0(
+#    "results_lin_disc/map_data_prior_model2_ohne_laerm_lambda_",
+#    gsub("\\.", "_", as.character(chosen_lambda)),
+#    ".rds"
+#  )
+#)
+
+vergleich_prior <- data.frame(
+  Modell = c("Model 1 mit Lärm", "Model 2 ohne Lärm"),
+  Lambda = chosen_lambda,
+  Prior_Scale = exp(chosen_lambda) - 1,
+  Änderungsrate = c(
+    karte_prior_model1$change_rate,
+    karte_prior_model2$change_rate
+  ),
+  Änderungsrate_Prozent = round(c(
+    karte_prior_model1$change_rate,
+    karte_prior_model2$change_rate
+  ) * 100, 2),
+  Realisierte_Verbesserung = c(
+    karte_prior_model1$realized_improvement,
+    karte_prior_model2$realized_improvement
+  )
+)
+
+print(vergleich_prior)
+
+
+
+
+
+
+
+# NEU
+library(sf)
+library(dplyr)
+
+# ==============================================================================
+# 0. EINSTELLUNGEN
+# ==============================================================================
+
+delta <- 2.75
+prior_scale <- exp(delta) - 1
+
+cat("Delta:", delta, "\n")
+cat("Entsprechender prior.scale:", round(prior_scale, 4), "\n")
+
+# Welches Modell soll verwendet werden?
+# Für Model 1 mit Lärm:
+SCORE_use <- SCORE
+model1_mit_laerm <- readRDS("results_lin_disc/model_3cat_optimierung.rds")
+modell_name <- "model1_mit_laerm"
+
+
+
+
+
+# ==============================================================================
+# 1. WOHNLAGENFLÄCHEN LADEN UND FLÄCHEN-ID VERGEBEN
+# ==============================================================================
+
+wohnlagen_muc_wgs <- readRDS("daten/wohnlagen_flächen.rds")
+
+# Sicherstellen, dass es sf ist
+wohnlagen_muc_wgs <- st_as_sf(wohnlagen_muc_wgs)
+
+# Eindeutige Flächen-ID vergeben
+wohnlagen_muc_wgs <- wohnlagen_muc_wgs %>%
+  mutate(
+    flaechen_id = row_number()
+  )
+
+cat("Anzahl Wohnlagenflächen:", nrow(wohnlagen_muc_wgs), "\n")
+
+
+# ==============================================================================
+# 2. DATA ALS SF-PUNKTE ERZEUGEN
+# ==============================================================================
+
+# data muss s.long und s.lat enthalten
+data$c <- as.factor(data$c)
+
+data_sf <- st_as_sf(
+  data,
+  coords = c("s.long", "s.lat"),
+  crs = 4326,
+  remove = FALSE
+)
+
+# CRS angleichen, falls nötig
+if (st_crs(data_sf) != st_crs(wohnlagen_muc_wgs)) {
+  data_sf <- st_transform(data_sf, st_crs(wohnlagen_muc_wgs))
+}
+
+
+# ==============================================================================
+# 3. DATA_SCORE ALS SF-PUNKTE UND SPATIAL JOIN
+# ==============================================================================
+
+data_sf <- st_as_sf(
+  data_score,
+  coords = c("s.long", "s.lat"),
+  crs = 4326,
+  remove = FALSE
+)
+
+if (st_crs(data_sf) != st_crs(wohnlagen_muc_wgs)) {
+  data_sf <- st_transform(data_sf, st_crs(wohnlagen_muc_wgs))
+}
+
+data_joined <- st_join(
+  data_sf,
+  wohnlagen_muc_wgs %>% select(flaechen_id, Wohnlage),
+  join = st_within,
+  left = TRUE
+)
+
+cat("Zeilen data_score:", nrow(data_score), "\n")
+cat("Zeilen data_joined:", nrow(data_joined), "\n")
+cat("Zeilen SCORE_use:", nrow(SCORE_use), "\n")
+cat("Punkte ohne zugeordnete Fläche:", sum(is.na(data_joined$flaechen_id)), "\n")
+
+stopifnot(nrow(data_joined) == nrow(SCORE_use))
+
+
+# ==============================================================================
+# 4. PRIOR-TRANSFORMATION MIT DELTA = 2.75
+# ==============================================================================
+
+levels_c <- levels(data_score$c)
+k <- length(levels_c)
+N <- nrow(data_score)
+
+stopifnot(nrow(SCORE_use) == N)
+
+prior_res <- apply_prior_scale_direct(
+  SCORE = SCORE_use,
+  data = data_score,
+  levels_c = levels_c,
+  prior_scale = prior_scale
+)
+
+
+# ==============================================================================
+# 5. PRIOR-ERGEBNISSE AN DATA_JOINED ANHÄNGEN
+# ==============================================================================
+
+data_joined <- data_joined %>%
+  mutate(
+    wohnlage_alt = as.character(c),
+    wohnlage_neu = prior_res$pred,
+    changed = wohnlage_alt != wohnlage_neu,
+    
+    score_alt = prior_res$current_score,
+    score_neu = prior_res$new_score,
+    score_best = prior_res$best_score,
+    realized_improvement = prior_res$realized_improvement,
+    potential_improvement = prior_res$potential_improvement,
+    
+    prob_max = apply(prior_res$PROB, 1, max)
+  )
+
+cat("Gesamte Änderungsrate auf allen Punkten:", round(mean(data_joined$changed) * 100, 2), "%\n")
+
+
+# ==============================================================================
+# 6. PUNKTE OHNE FLÄCHE IGNORIEREN
+# ==============================================================================
+
+data_joined_in_area <- data_joined %>%
+  filter(!is.na(flaechen_id))
+
+cat("Punkte insgesamt:", nrow(data_joined), "\n")
+cat("Punkte mit Fläche:", nrow(data_joined_in_area), "\n")
+cat("Ignorierte Punkte ohne Fläche:", nrow(data_joined) - nrow(data_joined_in_area), "\n")
+
+cat("Änderungsrate nur für Punkte mit Fläche:",
+    round(mean(data_joined_in_area$changed) * 100, 2), "%\n")
+
+
+# ==============================================================================
+# 7. ANTEIL GEÄNDERTER WOHNUNGEN JE FLÄCHE
+# ==============================================================================
+
+gebiet_summary <- data_joined_in_area %>%
+  st_drop_geometry() %>%
+  group_by(flaechen_id) %>%
+  summarise(
+    n_wohnungen = n(),
+    n_geaendert = sum(changed, na.rm = TRUE),
+    anteil_geaendert = n_geaendert / n_wohnungen,
+    anteil_geaendert_prozent = round(anteil_geaendert * 100, 2),
+    
+    mittlere_realisierte_verbesserung = mean(realized_improvement, na.rm = TRUE),
+    mittlere_potenzielle_verbesserung = mean(potential_improvement, na.rm = TRUE),
+    mittlere_max_prob = mean(prob_max, na.rm = TRUE),
+    
+    alte_lage_haeufig = names(sort(table(wohnlage_alt), decreasing = TRUE))[1],
+    neue_lage_haeufig = names(sort(table(wohnlage_neu), decreasing = TRUE))[1],
+    
+    .groups = "drop"
+  ) %>%
+  arrange(desc(anteil_geaendert), desc(n_geaendert))
+
+print(head(gebiet_summary, 30))
+
+
+# ==============================================================================
+# 8. SUMMARY AN FLÄCHEN JOINEN
+# ==============================================================================
+
+wohnlagen_muc_wgs_analyse <- wohnlagen_muc_wgs %>%
+  left_join(gebiet_summary, by = "flaechen_id") %>%
+  mutate(
+    n_wohnungen = ifelse(is.na(n_wohnungen), 0, n_wohnungen),
+    n_geaendert = ifelse(is.na(n_geaendert), 0, n_geaendert),
+    anteil_geaendert = ifelse(is.na(anteil_geaendert), 0, anteil_geaendert),
+    anteil_geaendert_prozent = ifelse(is.na(anteil_geaendert_prozent), 0, anteil_geaendert_prozent)
+  )
+
+
+# ==============================================================================
+# 9. GEBIETE MIT HOHEM ÄNDERUNGSANTEIL
+# ==============================================================================
+
+problemgebiete <- wohnlagen_muc_wgs_analyse %>%
+  filter(
+    n_wohnungen >= 1, # kann man ändern falls nur kleine gebiete relevant
+    anteil_geaendert >= 0.20
+  ) %>%
+  arrange(desc(anteil_geaendert), desc(n_geaendert))
+
+cat("Anzahl potenzieller Problemgebiete:", nrow(problemgebiete), "\n")
+
+problemgebiete %>%
+  st_drop_geometry() %>%
+  select(
+    flaechen_id,
+    Wohnlage,
+    n_wohnungen,
+    n_geaendert,
+    anteil_geaendert_prozent,
+    mittlere_realisierte_verbesserung,
+    alte_lage_haeufig,
+    neue_lage_haeufig
+  ) %>%
+  print(n = 50)
+
+
+
+library(sf)
+library(dplyr)
+
+# ==============================================================================
+# 0. EINSTELLUNGEN
+# ==============================================================================
+
+delta <- 2.75
+prior_scale <- exp(delta) - 1
+
+SCORE_use <- readRDS("results_lin_disc/SCORE_matrix_final_model.rds")
+model1 <- readRDS("results_lin_disc/model_3cat_optimierung.rds")
+
+cat("Delta:", delta, "\n")
+cat("Prior scale:", round(prior_scale, 4), "\n")
+cat("Zeilen SCORE_use:", nrow(SCORE_use), "\n")
+
+
+# ==============================================================================
+# 1. EXAKTEN MODELLDATENSATZ VERWENDEN
+# ==============================================================================
+
+data_score <- model1$model
+
+cat("Zeilen data_score:", nrow(data_score), "\n")
+cat("Zeilen SCORE_use:", nrow(SCORE_use), "\n")
+
+stopifnot(nrow(data_score) == nrow(SCORE_use))
+
+data_score$c <- as.factor(data_score$c)
+
+levels_c <- levels(data_score$c)
+k <- length(levels_c)
+N <- nrow(data_score)
+
+colnames(SCORE_use) <- levels_c
+
+cat("Klassen:", paste(levels_c, collapse = ", "), "\n")
+
+
+# ==============================================================================
+# 2. WOHNLAGENFLÄCHEN LADEN UND FLÄCHEN-ID VERGEBEN
+# ==============================================================================
+
+wohnlagen_muc_wgs <- readRDS("daten/wohnlagen_flächen.rds") %>%
+  st_as_sf() %>%
+  mutate(flaechen_id = row_number())
+
+cat("Anzahl Wohnlagenflächen:", nrow(wohnlagen_muc_wgs), "\n")
+
+
+# ==============================================================================
+# 3. DATA_SCORE ALS SF-PUNKTE
+# ==============================================================================
+
+data_sf <- st_as_sf(
+  data_score,
+  coords = c("s.long", "s.lat"),
+  crs = 4326,
+  remove = FALSE
+)
+
+if (st_crs(data_sf) != st_crs(wohnlagen_muc_wgs)) {
+  data_sf <- st_transform(data_sf, st_crs(wohnlagen_muc_wgs))
+}
+
+
+# ==============================================================================
+# 4. PUNKTE EINDEUTIG EINER FLÄCHE ZUORDNEN
+# ==============================================================================
+
+idx_list <- st_intersects(data_sf, wohnlagen_muc_wgs)
+
+n_matches <- lengths(idx_list)
+
+cat("Punkte ohne Fläche:", sum(n_matches == 0), "\n")
+cat("Punkte mit genau einer Fläche:", sum(n_matches == 1), "\n")
+cat("Punkte mit mehreren Flächen:", sum(n_matches > 1), "\n")
+
+polygon_idx <- sapply(idx_list, function(x) {
+  if (length(x) == 0) {
+    NA_integer_
+  } else {
+    x[1]
+  }
+})
+
+data_joined <- data_sf %>%
+  mutate(
+    flaechen_id = wohnlagen_muc_wgs$flaechen_id[polygon_idx],
+    Wohnlage_flaeche = wohnlagen_muc_wgs$Wohnlage[polygon_idx]
+  )
+
+cat("Zeilen data_joined:", nrow(data_joined), "\n")
+cat("Zeilen SCORE_use:", nrow(SCORE_use), "\n")
+
+stopifnot(nrow(data_joined) == nrow(SCORE_use))
+
+
+# ==============================================================================
+# 5. PRIOR-TRANSFORMATION
+# ==============================================================================
+
+apply_prior_scale_direct <- function(SCORE, data, levels_c, prior_scale) {
+  
+  N <- nrow(data)
+  k <- length(levels_c)
+  
+  PRIOR <- matrix(1, nrow = N, ncol = k)
+  colnames(PRIOR) <- levels_c
+  
+  for (j in seq_len(k)) {
+    PRIOR[, j] <- 1 + prior_scale * (as.character(data$c) == levels_c[j])
+  }
+  
+  SCORE_shifted <- SCORE - apply(SCORE, 1, min)
+  
+  PROB_prior <- exp(-SCORE_shifted) * PRIOR
+  PROB_prior <- PROB_prior / rowSums(PROB_prior)
+  colnames(PROB_prior) <- levels_c
+  
+  pred_idx <- max.col(PROB_prior)
+  pred <- levels_c[pred_idx]
+  
+  old_idx <- match(as.character(data$c), levels_c)
+  
+  current_score <- SCORE[cbind(seq_len(N), old_idx)]
+  new_score <- SCORE[cbind(seq_len(N), pred_idx)]
+  best_score <- apply(SCORE, 1, min)
+  
+  list(
+    PROB = PROB_prior,
+    pred_idx = pred_idx,
+    pred = pred,
+    current_score = current_score,
+    new_score = new_score,
+    best_score = best_score,
+    realized_improvement = current_score - new_score,
+    potential_improvement = current_score - best_score
+  )
+}
+
+prior_res <- apply_prior_scale_direct(
+  SCORE = SCORE_use,
+  data = data_score,
+  levels_c = levels_c,
+  prior_scale = prior_scale
+)
+
+
+# ==============================================================================
+# 6. PRIOR-ERGEBNISSE AN DATA_JOINED ANHÄNGEN
+# ==============================================================================
+
+data_joined <- data_joined %>%
+  mutate(
+    wohnlage_alt = as.character(c),
+    wohnlage_neu = prior_res$pred,
+    changed = wohnlage_alt != wohnlage_neu,
+    
+    score_alt = prior_res$current_score,
+    score_neu = prior_res$new_score,
+    score_best = prior_res$best_score,
+    realized_improvement = prior_res$realized_improvement,
+    potential_improvement = prior_res$potential_improvement,
+    
+    prob_max = apply(prior_res$PROB, 1, max)
+  )
+
+cat("Gesamte Änderungsrate auf allen Punkten:",
+    round(mean(data_joined$changed) * 100, 2), "%\n")
+
+
+# ==============================================================================
+# 7. PUNKTE OHNE FLÄCHE IGNORIEREN
+# ==============================================================================
+
+data_joined_in_area <- data_joined %>%
+  filter(!is.na(flaechen_id))
+
+cat("Punkte insgesamt:", nrow(data_joined), "\n")
+cat("Punkte mit Fläche:", nrow(data_joined_in_area), "\n")
+cat("Ignorierte Punkte ohne Fläche:",
+    nrow(data_joined) - nrow(data_joined_in_area), "\n")
+
+cat("Änderungsrate nur für Punkte mit Fläche:",
+    round(mean(data_joined_in_area$changed) * 100, 2), "%\n")
+
+
+# ==============================================================================
+# 8. ANTEIL GEÄNDERTER WOHNUNGEN JE FLÄCHE
+# ==============================================================================
+
+gebiet_summary <- data_joined_in_area %>%
+  st_drop_geometry() %>%
+  group_by(flaechen_id) %>%
+  summarise(
+    n_wohnungen = n(),
+    n_geaendert = sum(changed, na.rm = TRUE),
+    anteil_geaendert = n_geaendert / n_wohnungen,
+    anteil_geaendert_prozent = round(anteil_geaendert * 100, 2),
+    
+    mittlere_realisierte_verbesserung = mean(realized_improvement, na.rm = TRUE),
+    mittlere_potenzielle_verbesserung = mean(potential_improvement, na.rm = TRUE),
+    mittlere_max_prob = mean(prob_max, na.rm = TRUE),
+    
+    alte_lage_haeufig = names(sort(table(wohnlage_alt), decreasing = TRUE))[1],
+    neue_lage_haeufig = names(sort(table(wohnlage_neu), decreasing = TRUE))[1],
+    
+    .groups = "drop"
+  ) %>%
+  arrange(desc(anteil_geaendert), desc(n_geaendert))
+
+print(head(gebiet_summary, 30))
+
+
+# ==============================================================================
+# 9. SUMMARY AN FLÄCHENOBJEKTE JOINEN
+# ==============================================================================
+
+wohnlagen_muc_wgs_analyse <- wohnlagen_muc_wgs %>%
+  left_join(gebiet_summary, by = "flaechen_id") %>%
+  mutate(
+    n_wohnungen = ifelse(is.na(n_wohnungen), 0, n_wohnungen),
+    n_geaendert = ifelse(is.na(n_geaendert), 0, n_geaendert),
+    anteil_geaendert = ifelse(is.na(anteil_geaendert), 0, anteil_geaendert),
+    anteil_geaendert_prozent = ifelse(is.na(anteil_geaendert_prozent), 0, anteil_geaendert_prozent)
+  )
+
+
+# ==============================================================================
+# 10. GEBIETE MIT HOHEM ÄNDERUNGSANTEIL
+# ==============================================================================
+
+problemgebiete <- wohnlagen_muc_wgs_analyse %>%
+  filter(
+    n_wohnungen >= 20,
+    anteil_geaendert >= 0.20
+  ) %>%
+  arrange(desc(anteil_geaendert), desc(n_geaendert))
+
+cat("Anzahl potenzieller Problemgebiete:", nrow(problemgebiete), "\n")
+
+problemgebiete %>%
+  st_drop_geometry() %>%
+  select(
+    flaechen_id,
+    Wohnlage,
+    n_wohnungen,
+    n_geaendert,
+    anteil_geaendert_prozent,
+    mittlere_realisierte_verbesserung,
+    alte_lage_haeufig,
+    neue_lage_haeufig
+  )
+
+
+# ==============================================================================
+# 11. SPEICHERN
+# ==============================================================================
+
+suffix <- paste0("delta_", gsub("\\.", "_", as.character(delta)), "_model1_mit_laerm")
+
+saveRDS(
+  data_joined,
+  paste0("results_lin_disc/data_punkte_mit_flaechen_", suffix, ".rds")
+)
+
+saveRDS(
+  data_joined_in_area,
+  paste0("results_lin_disc/data_punkte_mit_flaechen_ohne_NA_", suffix, ".rds")
+)
+
+saveRDS(
+  wohnlagen_muc_wgs_analyse,
+  paste0("results_lin_disc/wohnlagen_flaechen_aenderungsanteil_", suffix, ".rds")
+)
+
+write.csv(
+  st_drop_geometry(gebiet_summary),
+  paste0("results_lin_disc/gebiet_summary_", suffix, ".csv"),
+  row.names = FALSE
+)
+
+cat("✓ Ergebnisse gespeichert.\n")
+
+
+
+
+# Neuer Ansatz von Göran um Lärm Problem zu beheben
+
+library(sf)
+library(dplyr)
+library(mgcv)
+
+# ==============================================================================
+# 0. EINSTELLUNGEN
+# ==============================================================================
+
+delta <- 2.75
+prior_scale <- exp(delta) - 1
+cat("Delta:", delta, "\n")
+cat("Entsprechender prior.scale:", round(prior_scale, 4), "\n")
+
+data_pasing <- readRDS("daten/model_munich_data2_pasing.rds")
+model_data_hoherlärm_pasing <- readRDS("daten/model_data_hoherlärm_pasing.rds")
+
+# ==============================================================================
+# WAHRE WOHNLAGE AUS wohnlage_ebene ABLEITEN
+# ==============================================================================
+
+# wohnlage_ebene ist in diesem Datensatz bereits 0 bis 5 kodiert:
+# 0 = durchschnittliche Lage
+# 1 = gute Lage
+# 2 = beste Lage
+# 3 = zentrale durchschnittliche Lage
+# 4 = zentrale gute Lage
+# 5 = zentrale beste Lage
+#
+# Für das 3-Kategorien-Modell werden zentrale und nicht-zentrale
+# Varianten wieder zusammengelegt.
+
+data_pasing$c <- case_when(
+  data_pasing$wohnlage_ebene %in% c(0, 3) ~ "durchschnittliche Lage",
+  data_pasing$wohnlage_ebene %in% c(1, 4) ~ "gute Lage",
+  data_pasing$wohnlage_ebene %in% c(2, 5) ~ "beste Lage",
+  TRUE ~ NA_character_
+)
+
+data_pasing$c <- factor(
+  data_pasing$c,
+  levels = c(
+    "beste Lage",
+    "durchschnittliche Lage",
+    "gute Lage"
+  )
+)
+
+cat("Verteilung der neuen wahren 3-Kategorien-Wohnlage:\n")
+print(table(data_pasing$c, useNA = "ifany"))
+
+levels_c <- levels(data_pasing$c)
+k <- length(levels_c)
+
+cat("Wohnlagenklassen:", paste(levels_c, collapse = ", "), "\n")
+
+
+# ==============================================================================
+# 2. Y-VARIABLEN ERZEUGEN
+# ==============================================================================
+
+data_pasing$y1  <- data_pasing$erreichbarkeit_gr10ha_in_metern_adr
+data_pasing$y2  <- data_pasing$erreichbarkeit_innenstadt_in_minuten_adr
+data_pasing$y3  <- data_pasing$erreichbarkeit_naechstehaltestelle_in_minuten_adr
+data_pasing$y4  <- data_pasing$grundschul_num
+data_pasing$y5  <- data_pasing$spielplatz_num
+data_pasing$y6  <- data_pasing$kitakigaho_num
+data_pasing$y7  <- data_pasing$ortszentru_num
+data_pasing$y8  <- data_pasing$brw_log
+data_pasing$y9  <- data_pasing$anteil_vf_sv
+data_pasing$y10 <- data_pasing$anteil_gf_sv
+data_pasing$y11 <- data_pasing$laerm
+
+
+# ==============================================================================
+# 3. VOLLSTÄNDIGE ZEILEN FÜR MODELL MIT LÄRM
+# ==============================================================================
+
+# Entspricht deinem bisherigen Modell mit Lärm:
+# y8 wird NICHT als Response verwendet.
+y_vars_model <- c(
+  "y1", "y2", "y3", "y4", "y5",
+  "y6", "y7", "y9", "y10", "y11"
+)
+
+vars_needed <- c(
+  "c",
+  "s.long",
+  "s.lat",
+  y_vars_model
+)
+
+data_pasing <- data_pasing %>%
+  filter(complete.cases(across(all_of(vars_needed))))
+
+N <- nrow(data_pasing)
+d <- length(y_vars_model)
+
+cat("Pasing-Punkte nach complete.cases:", N, "\n")
+cat("Anzahl Modell-Responses d:", d, "\n")
+
+
+# ==============================================================================
+# 4. MODELL FÜR PASING NEU SCHÄTZEN
+# ==============================================================================
+
+cat("\nSchätze Pasing-Modell mit Lärm neu...\n")
+
+start_zeit <- Sys.time()
+
+model_pasing <- gam(
+  list(
+    y1  ~ s(s.long, s.lat, by = c, k = 15) + c,
+    y2  ~ s(s.long, s.lat, by = c, k = 15) + c,
+    y3  ~ s(s.long, s.lat, by = c, k = 15) + c,
+    y4  ~ s(s.long, s.lat, by = c, k = 15) + c,
+    y5  ~ s(s.long, s.lat, by = c, k = 15) + c,
+    y6  ~ s(s.long, s.lat, by = c, k = 15) + c,
+    y7  ~ s(s.long, s.lat, by = c, k = 15) + c,
+    y9  ~ s(s.long, s.lat, by = c, k = 15) + c,
+    y10 ~ s(s.long, s.lat, by = c, k = 15) + c,
+    y11 ~ s(s.long, s.lat, by = c, k = 15) + c
+  ),
+  family = mvn(d = d),
+  data = data_pasing,
+  optimizer = "efs",
+  control = gam.control(trace = TRUE)
+)
+
+cat("\nModell geschätzt in:\n")
+print(Sys.time() - start_zeit)
+
+saveRDS(
+  model_pasing,
+  "results_lin_disc/model_pasing_mit_laerm.rds"
+)
+
+
+# ==============================================================================
+# 5. VARIANZSTRUKTUR AUS PASING-MODELL
+# ==============================================================================
+
+VAR <- solve(crossprod(model_pasing$family$data$R))
+INV_VAR <- solve(VAR)
+
+
+# ==============================================================================
+# 6. SCORE-MATRIX FÜR PASING BERECHNEN
+# ==============================================================================
+
+Y_pasing <- as.matrix(data_pasing[, y_vars_model])
+
+SCORE_pasing <- matrix(
+  0,
+  nrow = N,
+  ncol = k
+)
+
+colnames(SCORE_pasing) <- levels_c
+
+for (j in seq_len(k)) {
+  
+  cat("Berechne Score für Klasse",
+      j, "von", k, ":", levels_c[j], "\n")
+  
+  tmp <- data_pasing
+  tmp$c <- levels_c[j]
+  
+  fit <- predict(model_pasing, newdata = tmp)
+  
+  diff <- Y_pasing - fit
+  
+  score_temp <- (diff %*% INV_VAR) * diff
+  
+  SCORE_pasing[, j] <- rowSums(score_temp)
+}
+
+saveRDS(
+  SCORE_pasing,
+  "results_lin_disc/SCORE_pasing_mit_laerm.rds"
+)
+
+
+# ==============================================================================
+# 7. PRIOR-TRANSFORMATION MIT PRIOR.SCALE AUS DELTA = 2.75
+# ==============================================================================
+
+apply_prior_scale_direct <- function(SCORE, data, levels_c, prior_scale) {
+  
+  N <- nrow(data)
+  k <- length(levels_c)
+  
+  PRIOR <- matrix(1, nrow = N, ncol = k)
+  colnames(PRIOR) <- levels_c
+  
+  for (j in seq_len(k)) {
+    PRIOR[, j] <- 1 + prior_scale *
+      (as.character(data$c) == levels_c[j])
+  }
+  
+  SCORE_shifted <- SCORE - apply(SCORE, 1, min)
+  
+  PROB_prior <- exp(-SCORE_shifted) * PRIOR
+  PROB_prior <- PROB_prior / rowSums(PROB_prior)
+  
+  colnames(PROB_prior) <- levels_c
+  
+  pred_idx <- max.col(PROB_prior)
+  pred <- levels_c[pred_idx]
+  
+  old_idx <- match(as.character(data$c), levels_c)
+  
+  current_score <- SCORE[cbind(seq_len(N), old_idx)]
+  new_score <- SCORE[cbind(seq_len(N), pred_idx)]
+  best_score <- apply(SCORE, 1, min)
+  
+  return(list(
+    PROB = PROB_prior,
+    pred_idx = pred_idx,
+    pred = pred,
+    current_score = current_score,
+    new_score = new_score,
+    best_score = best_score,
+    realized_improvement = current_score - new_score,
+    potential_improvement = current_score - best_score
+  ))
+}
+
+prior_res_pasing <- apply_prior_scale_direct(
+  SCORE = SCORE_pasing,
+  data = data_pasing,
+  levels_c = levels_c,
+  prior_scale = prior_scale
+)
+
+
+# ==============================================================================
+# 8. PRIOR-ERGEBNISSE AN PASING-DATEN ANHÄNGEN
+# ==============================================================================
+
+data_pasing <- data_pasing %>%
+  mutate(
+    wohnlage_alt = as.character(c),
+    wohnlage_neu = prior_res_pasing$pred,
+    changed = wohnlage_alt != wohnlage_neu,
+    
+    score_alt = prior_res_pasing$current_score,
+    score_neu = prior_res_pasing$new_score,
+    score_best = prior_res_pasing$best_score,
+    
+    realized_improvement =
+      prior_res_pasing$realized_improvement,
+    
+    potential_improvement =
+      prior_res_pasing$potential_improvement,
+    
+    prob_max = apply(prior_res_pasing$PROB, 1, max)
+  )
+
+cat("\nÄnderungsrate in Pasing:",
+    round(mean(data_pasing$changed) * 100, 2), "%\n")
+
+cat("Realisierte mittlere Verbesserung:",
+    round(mean(data_pasing$realized_improvement), 4), "\n")
+
+
+# ==============================================================================
+# 9. WOHNLAGENFLÄCHEN LADEN UND FLÄCHEN-ID VERGEBEN
+# ==============================================================================
+
+wohnlagen_muc_wgs <- readRDS("daten/wohnlagen_flächen.rds") %>%
+  st_as_sf() %>%
+  mutate(flaechen_id = row_number())
+
+cat("Anzahl Wohnlagenflächen insgesamt:",
+    nrow(wohnlagen_muc_wgs), "\n")
+
+
+# ==============================================================================
+# 10. PASING-PUNKTE EINDEUTIG EINER FLÄCHE ZUORDNEN
+# ==============================================================================
+
+data_pasing_sf <- st_as_sf(
+  data_pasing,
+  coords = c("s.long", "s.lat"),
+  crs = 4326,
+  remove = FALSE
+)
+
+if (st_crs(data_pasing_sf) != st_crs(wohnlagen_muc_wgs)) {
+  data_pasing_sf <- st_transform(
+    data_pasing_sf,
+    st_crs(wohnlagen_muc_wgs)
+  )
+}
+
+idx_list <- st_intersects(
+  data_pasing_sf,
+  wohnlagen_muc_wgs
+)
+
+n_matches <- lengths(idx_list)
+
+cat("Pasing-Punkte ohne Fläche:",
+    sum(n_matches == 0), "\n")
+
+cat("Pasing-Punkte mit genau einer Fläche:",
+    sum(n_matches == 1), "\n")
+
+cat("Pasing-Punkte mit mehreren Flächen:",
+    sum(n_matches > 1), "\n")
+
+polygon_idx <- sapply(idx_list, function(x) {
+  if (length(x) == 0) {
+    NA_integer_
+  } else {
+    x[1]
+  }
+})
+
+data_pasing_joined <- data_pasing_sf %>%
+  mutate(
+    flaechen_id = wohnlagen_muc_wgs$flaechen_id[polygon_idx],
+    Wohnlage_flaeche = wohnlagen_muc_wgs$Wohnlage[polygon_idx]
+  )
+
+
+# ==============================================================================
+# 11. PUNKTE OHNE FLÄCHE IGNORIEREN
+# ==============================================================================
+
+data_pasing_in_area <- data_pasing_joined %>%
+  filter(!is.na(flaechen_id))
+
+cat("Pasing-Punkte insgesamt:",
+    nrow(data_pasing_joined), "\n")
+
+cat("Pasing-Punkte mit Fläche:",
+    nrow(data_pasing_in_area), "\n")
+
+cat("Ignorierte Punkte ohne Fläche:",
+    nrow(data_pasing_joined) - nrow(data_pasing_in_area), "\n")
+
+
+# ==============================================================================
+# 12. ÄNDERUNGSANTEIL JE WOHNLAGENFLÄCHE IN PASING
+# ==============================================================================
+
+gebiet_summary_pasing <- data_pasing_in_area %>%
+  st_drop_geometry() %>%
+  group_by(flaechen_id) %>%
+  summarise(
+    n_wohnungen = n(),
+    n_geaendert = sum(changed, na.rm = TRUE),
+    
+    anteil_geaendert =
+      n_geaendert / n_wohnungen,
+    
+    anteil_geaendert_prozent =
+      round(anteil_geaendert * 100, 2),
+    
+    mittlere_realisierte_verbesserung =
+      mean(realized_improvement, na.rm = TRUE),
+    
+    mittlere_potenzielle_verbesserung =
+      mean(potential_improvement, na.rm = TRUE),
+    
+    mittlere_max_prob =
+      mean(prob_max, na.rm = TRUE),
+    
+    alte_lage_haeufig =
+      names(sort(table(wohnlage_alt), decreasing = TRUE))[1],
+    
+    neue_lage_haeufig =
+      names(sort(table(wohnlage_neu), decreasing = TRUE))[1],
+    
+    .groups = "drop"
+  ) %>%
+  arrange(desc(anteil_geaendert), desc(n_geaendert))
+
+print(gebiet_summary_pasing, n = 50)
+
+
+# ==============================================================================
+# 13. SUMMARY AN FLÄCHENOBJEKTE JOINEN
+# ==============================================================================
+
+wohnlagen_pasing_analyse <- wohnlagen_muc_wgs %>%
+  left_join(
+    gebiet_summary_pasing,
+    by = "flaechen_id"
+  ) %>%
+  filter(!is.na(n_wohnungen))
+
+cat("Wohnlagenflächen mit mindestens einem Pasing-Punkt:",
+    nrow(wohnlagen_pasing_analyse), "\n")
+
+
+# ==============================================================================
+# 14. POTENZIELLE PROBLEMGEBIETE IN PASING
+# ==============================================================================
+
+problemgebiete_pasing %>%
+  st_drop_geometry() %>%
+  select(
+    flaechen_id,
+    Wohnlage,
+    n_wohnungen,
+    n_geaendert,
+    anteil_geaendert_prozent,
+    mittlere_realisierte_verbesserung,
+    alte_lage_haeufig,
+    neue_lage_haeufig
+  ) %>%
+  head(50) %>%
+  print()
+
+
+
+
+
+
+
+
+
+
+
+# Validierungstest: Sind delta und prior scale äquivalent?
+# ==============================================================================
+# VERGLEICH:
+# Delta-Ansatz vs. Prior-Scale-Ansatz
+# Grundlage: zuvor berechnetes Pasing-Modell und SCORE_pasing
+# ==============================================================================
+
+library(dplyr)
+
+# ==============================================================================
+# 1. EINSTELLUNGEN
+# ==============================================================================
+
+chosen_delta <- 2.75
+
+# Mathematisch äquivalenter Prior-Scale-Wert
+equivalent_prior_scale <- exp(chosen_delta) - 1
+
+# Optionaler Vergleich: gleicher Zahlenwert, aber NICHT äquivalent
+same_numeric_prior_scale <- 2.75
+
+cat("\n====================================\n")
+cat("Vergleich Delta vs. Prior Scale\n")
+cat("====================================\n")
+cat("Delta:", chosen_delta, "\n")
+cat("Äquivalenter prior.scale = exp(delta)-1:",
+    round(equivalent_prior_scale, 4), "\n")
+cat("Nicht äquivalenter prior.scale mit gleichem Zahlenwert:",
+    same_numeric_prior_scale, "\n")
+cat("====================================\n")
+
+
+# ==============================================================================
+# 2. FUNKTION: DIREKTER PRIOR-SCALE-ANSATZ
+# ==============================================================================
+
+apply_prior_scale_compare <- function(SCORE, data, levels_c, prior_scale) {
+  
+  N <- nrow(data)
+  k <- length(levels_c)
+  
+  PRIOR <- matrix(1, nrow = N, ncol = k)
+  colnames(PRIOR) <- levels_c
+  
+  for (j in seq_len(k)) {
+    PRIOR[, j] <- 1 + prior_scale *
+      (as.character(data$c) == levels_c[j])
+  }
+  
+  SCORE_shifted <- SCORE - apply(SCORE, 1, min)
+  
+  PROB <- exp(-SCORE_shifted) * PRIOR
+  PROB <- PROB / rowSums(PROB)
+  colnames(PROB) <- levels_c
+  
+  pred_idx <- max.col(PROB)
+  pred <- levels_c[pred_idx]
+  
+  old_class <- as.character(data$c)
+  changed <- pred != old_class
+  
+  return(list(
+    prior_scale = prior_scale,
+    delta_equivalent = log(1 + prior_scale),
+    PROB = PROB,
+    pred_idx = pred_idx,
+    pred = pred,
+    changed = changed
+  ))
+}
+
+
+# ==============================================================================
+# 3. FUNKTION: DELTA-ANSATZ
+#    Intern wird prior.scale = exp(delta)-1 verwendet
+# ==============================================================================
+
+apply_prior_delta_compare <- function(SCORE, data, levels_c, delta) {
+  
+  prior_scale <- exp(delta) - 1
+  
+  res <- apply_prior_scale_compare(
+    SCORE = SCORE,
+    data = data,
+    levels_c = levels_c,
+    prior_scale = prior_scale
+  )
+  
+  res$delta <- delta
+  
+  return(res)
+}
+
+
+# ==============================================================================
+# 4. ERGEBNISSE BERECHNEN
+# ==============================================================================
+
+res_delta <- apply_prior_delta_compare(
+  SCORE = SCORE_pasing,
+  data = data_pasing,
+  levels_c = levels_c,
+  delta = chosen_delta
+)
+
+res_prior_equivalent <- apply_prior_scale_compare(
+  SCORE = SCORE_pasing,
+  data = data_pasing,
+  levels_c = levels_c,
+  prior_scale = equivalent_prior_scale
+)
+
+res_prior_same_numeric <- apply_prior_scale_compare(
+  SCORE = SCORE_pasing,
+  data = data_pasing,
+  levels_c = levels_c,
+  prior_scale = same_numeric_prior_scale
+)
+
+
+# ==============================================================================
+# 5. VERGLEICH A:
+#    Delta = 2.75
+#    Prior Scale = exp(2.75)-1
+#    Diese beiden sollten IDENTISCH sein.
+# ==============================================================================
+
+old_class <- as.character(data_pasing$c)
+
+vergleich_equivalent <- data.frame(
+  wohnlage_alt = old_class,
+  
+  wohnlage_neu_delta = res_delta$pred,
+  wohnlage_neu_prior_equiv = res_prior_equivalent$pred,
+  
+  changed_delta = res_delta$changed,
+  changed_prior_equiv = res_prior_equivalent$changed,
+  
+  gleiche_neue_klasse =
+    res_delta$pred == res_prior_equivalent$pred,
+  
+  gleiche_aenderungsentscheidung =
+    res_delta$changed == res_prior_equivalent$changed
+)
+
+cat("\n\n====================================\n")
+cat("A) Delta = 2.75 vs. äquivalenter Prior Scale\n")
+cat("====================================\n")
+
+cat("Delta:", chosen_delta, "\n")
+cat("Prior Scale:", round(equivalent_prior_scale, 4), "\n\n")
+
+cat("Änderungsrate Delta:",
+    round(mean(vergleich_equivalent$changed_delta) * 100, 2), "%\n")
+
+cat("Änderungsrate äquivalenter Prior Scale:",
+    round(mean(vergleich_equivalent$changed_prior_equiv) * 100, 2), "%\n\n")
+
+cat("Alle neuen Klassen identisch:",
+    all(vergleich_equivalent$gleiche_neue_klasse), "\n")
+
+cat("Alle Änderungsentscheidungen identisch:",
+    all(vergleich_equivalent$gleiche_aenderungsentscheidung), "\n\n")
+
+cat("Anzahl abweichender neuer Klassen:",
+    sum(!vergleich_equivalent$gleiche_neue_klasse), "\n")
+
+cat("Anzahl abweichender Änderungsentscheidungen:",
+    sum(!vergleich_equivalent$gleiche_aenderungsentscheidung), "\n")
+
+cat("====================================\n")
+
+
+# ==============================================================================
+# 6. ÜBERGANGSMATRIZEN FÜR DEN ÄQUIVALENTEN VERGLEICH
+# ==============================================================================
+
+cat("\nÜbergangsmatrix Delta-Ansatz:\n")
+print(table(
+  Alt = vergleich_equivalent$wohnlage_alt,
+  Neu = vergleich_equivalent$wohnlage_neu_delta
+))
+
+cat("\nÜbergangsmatrix äquivalenter Prior-Scale-Ansatz:\n")
+print(table(
+  Alt = vergleich_equivalent$wohnlage_alt,
+  Neu = vergleich_equivalent$wohnlage_neu_prior_equiv
+))
+
+
+# ==============================================================================
+# 7. VERGLEICH B:
+#    Delta = 2.75
+#    Prior Scale = 2.75
+#    Diese beiden sind NICHT mathematisch äquivalent.
+# ==============================================================================
+
+vergleich_same_numeric <- data.frame(
+  wohnlage_alt = old_class,
+  
+  wohnlage_neu_delta = res_delta$pred,
+  wohnlage_neu_prior_2_75 = res_prior_same_numeric$pred,
+  
+  changed_delta = res_delta$changed,
+  changed_prior_2_75 = res_prior_same_numeric$changed
+) %>%
+  mutate(
+    geaendert_beide =
+      changed_delta & changed_prior_2_75,
+    
+    nur_delta =
+      changed_delta & !changed_prior_2_75,
+    
+    nur_prior_2_75 =
+      !changed_delta & changed_prior_2_75,
+    
+    keiner =
+      !changed_delta & !changed_prior_2_75,
+    
+    gleiche_neue_klasse =
+      wohnlage_neu_delta == wohnlage_neu_prior_2_75
+  )
+
+cat("\n\n====================================\n")
+cat("B) Delta = 2.75 vs. Prior Scale = 2.75\n")
+cat("   NICHT äquivalent\n")
+cat("====================================\n")
+
+cat("Änderungsrate Delta = 2.75:",
+    round(mean(vergleich_same_numeric$changed_delta) * 100, 2), "%\n")
+
+cat("Änderungsrate Prior Scale = 2.75:",
+    round(mean(vergleich_same_numeric$changed_prior_2_75) * 100, 2), "%\n\n")
+
+cat("Anzahl unterschiedlicher neuer Klassen:",
+    sum(!vergleich_same_numeric$gleiche_neue_klasse), "\n")
+
+cat("Anzahl unterschiedlicher Änderungsentscheidungen:",
+    sum(vergleich_same_numeric$changed_delta !=
+          vergleich_same_numeric$changed_prior_2_75), "\n")
+
+cat("====================================\n")
+
+
+# ==============================================================================
+# 8. WELCHE WOHNUNGEN WERDEN BEI VERGLEICH B GEÄNDERT?
+# ==============================================================================
+
+cat("\nVergleich der Änderungsmengen:\n")
+print(table(
+  Delta_geaendert = vergleich_same_numeric$changed_delta,
+  PriorScale_2_75_geaendert = vergleich_same_numeric$changed_prior_2_75
+))
+
+
+# ==============================================================================
+# 9. KLASSENSPEZIFISCHE ÄNDERUNGSRATEN:
+#    Werden bestimmte Ausgangsklassen stärker geändert?
+# ==============================================================================
+
+vergleich_klassen <- vergleich_same_numeric %>%
+  group_by(wohnlage_alt) %>%
+  summarise(
+    n = n(),
+    
+    aenderungsrate_delta =
+      mean(changed_delta),
+    
+    aenderungsrate_prior_scale_2_75 =
+      mean(changed_prior_2_75),
+    
+    anteil_nur_delta =
+      mean(nur_delta),
+    
+    anteil_nur_prior_scale_2_75 =
+      mean(nur_prior_2_75),
+    
+    .groups = "drop"
+  ) %>%
+  mutate(
+    across(
+      c(
+        aenderungsrate_delta,
+        aenderungsrate_prior_scale_2_75,
+        anteil_nur_delta,
+        anteil_nur_prior_scale_2_75
+      ),
+      ~ round(.x * 100, 2)
+    )
+  )
+
+cat("\nKlassenspezifischer Vergleich:\n")
+print(vergleich_klassen)
+
+
+# ==============================================================================
+# 10. ÜBERGANGSMATRIZEN FÜR VERGLEICH B
+# ==============================================================================
+
+cat("\nÜbergangsmatrix Delta = 2.75:\n")
+print(table(
+  Alt = vergleich_same_numeric$wohnlage_alt,
+  Neu = vergleich_same_numeric$wohnlage_neu_delta
+))
+
+cat("\nÜbergangsmatrix Prior Scale = 2.75:\n")
+print(table(
+  Alt = vergleich_same_numeric$wohnlage_alt,
+  Neu = vergleich_same_numeric$wohnlage_neu_prior_2_75
+))
+
+
+
+
+
+
+
+# ==============================================================================
+# K-NEAREST-NEIGHBOUR-ZUORDNUNG FÜR PASING-LÄRMPUNKTE
+# ==============================================================================
+#
+# Idee:
+# - Referenzpunkte: bereits modellierte Pasing-Punkte aus data_pasing
+#   mit finaler prior-transformierter Klasse "wohnlage_neu"
+# - Lärmpunkte: eigener Pasing-Lärm-Datensatz
+# - Für jeden Lärmpunkt:
+#     1. k nächste Referenzpunkte suchen
+#     2. Mehrheitsklasse der Nachbarn bestimmen
+#     3. Diese Klasse wegen Lärm um eine Wohnlagenstufe abwerten
+#
+# ==============================================================================
+# 0. PAKETE
+# ==============================================================================
+
+library(dplyr)
+library(sf)
+
+if (!requireNamespace("FNN", quietly = TRUE)) {
+  install.packages("FNN")
+}
+
+library(FNN)
+
+
+# ==============================================================================
+# 1. EINSTELLUNGEN
+# ==============================================================================
+
+k_neighbors <- 10
+
+cat("Verwendete Anzahl Nachbarn k:", k_neighbors, "\n")
+
+
+# ==============================================================================
+# 2. LÄRMDATENSATZ LADEN
+# ==============================================================================
+
+# HIER NUR DEN DATEINAMEN ANPASSEN, FALLS DEIN LÄRMDATENSATZ ANDERS HEISST
+data_pasing_laerm <- readRDS("daten/model_data_hoherlärm_pasing.rds")
+
+cat("Anzahl Pasing-Lärmpunkte:", nrow(data_pasing_laerm), "\n")
+
+
+# ==============================================================================
+# 3. SICHERHEITSCHECKS
+# ==============================================================================
+
+# data_pasing stammt aus dem vorherigen Workflow.
+# Es muss bereits die prior-transformierte Wohnlage enthalten:
+#   wohnlage_neu
+# sowie Koordinaten:
+#   s.long, s.lat
+
+required_reference_vars <- c(
+  "s.long",
+  "s.lat",
+  "wohnlage_neu"
+)
+
+missing_reference_vars <- setdiff(required_reference_vars, names(data_pasing))
+
+if (length(missing_reference_vars) > 0) {
+  stop(
+    paste(
+      "In data_pasing fehlen folgende Variablen:",
+      paste(missing_reference_vars, collapse = ", ")
+    )
+  )
+}
+
+required_laerm_vars <- c(
+  "s.long",
+  "s.lat"
+)
+
+missing_laerm_vars <- setdiff(required_laerm_vars, names(data_pasing_laerm))
+
+if (length(missing_laerm_vars) > 0) {
+  stop(
+    paste(
+      "Im Pasing-Lärmdatensatz fehlen folgende Variablen:",
+      paste(missing_laerm_vars, collapse = ", ")
+    )
+  )
+}
+
+
+# ==============================================================================
+# 4. WAHRE ALTE 3-KATEGORIEN-WOHNLAGE AUS wohnlage_ebene ABLEITEN
+#    Nur für spätere Diagnose / Vergleich
+# ==============================================================================
+
+map_wohnlage_3cat <- function(x) {
+  
+  vals <- sort(unique(na.omit(x)))
+  
+  # Fall A: wohnlage_ebene ist 0 bis 5 kodiert
+  if (all(vals %in% 0:5)) {
+    out <- case_when(
+      x %in% c(0, 3) ~ "durchschnittliche Lage",
+      x %in% c(1, 4) ~ "gute Lage",
+      x %in% c(2, 5) ~ "beste Lage",
+      TRUE ~ NA_character_
+    )
+  }
+  
+  # Fall B: wohnlage_ebene ist 1 bis 6 kodiert
+  else if (all(vals %in% 1:6)) {
+    out <- case_when(
+      x %in% c(1, 4) ~ "durchschnittliche Lage",
+      x %in% c(2, 5) ~ "gute Lage",
+      x %in% c(3, 6) ~ "beste Lage",
+      TRUE ~ NA_character_
+    )
+  }
+  
+  else {
+    stop("Unbekannte Kodierung von wohnlage_ebene.")
+  }
+  
+  return(out)
+}
+
+
+if ("wohnlage_ebene" %in% names(data_pasing_laerm)) {
+  
+  data_pasing_laerm <- data_pasing_laerm %>%
+    mutate(
+      wohnlage_alt_3cat = map_wohnlage_3cat(wohnlage_ebene)
+    )
+  
+  cat("Alte wahre 3-Kategorien-Wohnlage der Lärmpunkte:\n")
+  print(table(data_pasing_laerm$wohnlage_alt_3cat, useNA = "ifany"))
+}
+
+
+# ==============================================================================
+# 5. REFERENZ- UND LÄRMPUNKTE IN SF UMWANDELN
+#    Ausgangspunkt: WGS84 Longitude/Latitude
+# ==============================================================================
+
+reference_sf <- st_as_sf(
+  data_pasing,
+  coords = c("s.long", "s.lat"),
+  crs = 4326,
+  remove = FALSE
+)
+
+laerm_sf <- st_as_sf(
+  data_pasing_laerm,
+  coords = c("s.long", "s.lat"),
+  crs = 4326,
+  remove = FALSE
+)
+
+
+# ==============================================================================
+# 6. IN METRISCHE KOORDINATEN TRANSFORMIEREN
+#    EPSG:25832 = ETRS89 / UTM Zone 32N
+# ==============================================================================
+
+reference_sf_utm <- st_transform(reference_sf, 25832)
+laerm_sf_utm <- st_transform(laerm_sf, 25832)
+
+reference_coords <- st_coordinates(reference_sf_utm)
+laerm_coords <- st_coordinates(laerm_sf_utm)
+
+
+# ==============================================================================
+# 7. K-NEAREST-NEIGHBOURS SUCHEN
+# ==============================================================================
+
+knn_res <- FNN::get.knnx(
+  data = reference_coords,
+  query = laerm_coords,
+  k = k_neighbors,
+  algorithm = "kd_tree"
+)
+
+# Matrix: pro Lärmpunkt stehen hier die Zeilenindizes seiner k Nachbarn
+neighbor_index_matrix <- knn_res$nn.index
+
+# Matrix: Distanzen zu den k Nachbarn in Metern
+neighbor_distance_matrix <- knn_res$nn.dist
+
+cat("kNN-Suche abgeschlossen.\n")
+
+
+# ==============================================================================
+# 8. MEHRHEITSWOHNLAGE DER K NÄCHSTEN NACHBARN BESTIMMEN
+# ==============================================================================
+
+wohnlage_order <- c(
+  "durchschnittliche Lage",
+  "gute Lage",
+  "beste Lage"
+)
+
+# Hilfsfunktion:
+# - bestimmt die Mehrheitsklasse
+# - falls Gleichstand: schlechtere Wohnlage wählen
+majority_vote_conservative <- function(classes) {
+  
+  tab <- table(factor(classes, levels = wohnlage_order))
+  
+  max_count <- max(tab)
+  
+  winner_classes <- names(tab)[tab == max_count]
+  
+  # Bei Gleichstand wird die schlechtere Wohnlage genommen.
+  # Reihenfolge ist: durchschnittlich < gut < beste
+  winner_idx <- match(winner_classes, wohnlage_order)
+  
+  winner <- wohnlage_order[min(winner_idx)]
+  
+  return(winner)
+}
+
+
+wohnlage_knn_basis <- apply(
+  neighbor_index_matrix,
+  1,
+  function(idx) {
+    neighbor_classes <- data_pasing$wohnlage_neu[idx]
+    majority_vote_conservative(neighbor_classes)
+  }
+)
+
+
+# ==============================================================================
+# 9. MEHRHEITSANTEIL DER K NACHBARN BERECHNEN
+#    Das zeigt, wie eindeutig die kNN-Zuordnung ist.
+# ==============================================================================
+
+knn_vote_share <- apply(
+  neighbor_index_matrix,
+  1,
+  function(idx) {
+    
+    neighbor_classes <- data_pasing$wohnlage_neu[idx]
+    
+    tab <- table(factor(neighbor_classes, levels = wohnlage_order))
+    
+    max(tab) / sum(tab)
+  }
+)
+
+
+# ==============================================================================
+# 10. WOHNLAGE WEGEN LÄRM UM EINE STUFE ABWERTEN
+# ==============================================================================
+
+downgrade_one_level <- function(x) {
+  
+  case_when(
+    x == "beste Lage" ~ "gute Lage",
+    x == "gute Lage" ~ "durchschnittliche Lage",
+    x == "durchschnittliche Lage" ~ "durchschnittliche Lage",
+    TRUE ~ NA_character_
+  )
+}
+
+wohnlage_nach_laerm <- downgrade_one_level(wohnlage_knn_basis)
+
+
+# ==============================================================================
+# 11. ERGEBNISSE AN LÄRMDATENSATZ ANHÄNGEN
+# ==============================================================================
+
+data_pasing_laerm_knn <- data_pasing_laerm %>%
+  mutate(
+    knn_k = k_neighbors,
+    
+    wohnlage_knn_basis = wohnlage_knn_basis,
+    wohnlage_nach_laerm = wohnlage_nach_laerm,
+    
+    knn_vote_share = knn_vote_share,
+    
+    distanz_naechster_nachbar_m =
+      neighbor_distance_matrix[, 1],
+    
+    distanz_mittlere_k_nachbarn_m =
+      rowMeans(neighbor_distance_matrix),
+    
+    abgewertet_durch_laerm =
+      wohnlage_knn_basis != wohnlage_nach_laerm
+  )
+
+
+# ==============================================================================
+# 12. KURZE AUSWERTUNG
+# ==============================================================================
+
+cat("\n====================================\n")
+cat("kNN-Zuordnung der Lärmpunkte abgeschlossen\n")
+cat("====================================\n")
+
+cat("Anzahl Lärmpunkte:",
+    nrow(data_pasing_laerm_knn), "\n")
+
+cat("\nWohnlage aus kNN-Votum:\n")
+print(table(data_pasing_laerm_knn$wohnlage_knn_basis, useNA = "ifany"))
+
+cat("\nWohnlage nach Lärm-Abwertung:\n")
+print(table(data_pasing_laerm_knn$wohnlage_nach_laerm, useNA = "ifany"))
+
+cat("\nAnteil tatsächlich abgewertet:",
+    round(mean(data_pasing_laerm_knn$abgewertet_durch_laerm) * 100, 2),
+    "%\n")
+
+cat("\nEindeutigkeit des kNN-Votums:\n")
+print(summary(data_pasing_laerm_knn$knn_vote_share))
+
+cat("\nDistanz zum nächsten Nachbarn in Metern:\n")
+print(summary(data_pasing_laerm_knn$distanz_naechster_nachbar_m))
+
+cat("\nMittlere Distanz zu den k Nachbarn in Metern:\n")
+print(summary(data_pasing_laerm_knn$distanz_mittlere_k_nachbarn_m))
+
+
+# ==============================================================================
+# 13. OPTIONAL: VERGLEICH MIT ALTER WAHREN WOHNLAGE
+# ==============================================================================
+# Nur möglich, falls wohnlage_ebene vorhanden war.
+
+if ("wohnlage_alt_3cat" %in% names(data_pasing_laerm_knn)) {
+  
+  cat("\nVergleich alte wahre Wohnlage vs. finale Lärm-Wohnlage:\n")
+  
+  print(table(
+    Alt = data_pasing_laerm_knn$wohnlage_alt_3cat,
+    Neu_nach_Laerm = data_pasing_laerm_knn$wohnlage_nach_laerm
+  ))
+}
+
+
+
+
+
+
+
+# ==============================================================================
+# INTERAKTIVE GESAMTKARTE PASING
+# - Prior-Delta-Modell
+# - Flächenanalyse
+# - Problemgebiete
+# - kNN-Lärmpunkte mit Abwertung
+# ==============================================================================
+
+library(sf)
+library(dplyr)
+library(leaflet)
+library(htmlwidgets)
+library(scales)
+
+# ==============================================================================
+# 0. OBJEKTE PRÜFEN / FALLBACKS LADEN
+# ==============================================================================
+
+# Erwartete Objekte:
+# data_pasing_joined
+# data_pasing_in_area
+# wohnlagen_pasing_analyse
+# problemgebiete_pasing
+# data_pasing_laerm_knn
+
+if (!exists("data_pasing_joined")) {
+  data_pasing_joined <- readRDS(
+    "results_lin_disc/data_pasing_joined_prior_delta_2_75_mit_laerm.rds"
+  )
+}
+
+if (!exists("data_pasing_in_area")) {
+  data_pasing_in_area <- readRDS(
+    "results_lin_disc/data_pasing_in_area_prior_delta_2_75_mit_laerm.rds"
+  )
+}
+
+if (!exists("wohnlagen_pasing_analyse")) {
+  wohnlagen_pasing_analyse <- readRDS(
+    "results_lin_disc/wohnlagen_pasing_aenderungsanteil_delta_2_75_mit_laerm.rds"
+  )
+}
+
+if (!exists("data_pasing_laerm_knn")) {
+  data_pasing_laerm_knn <- readRDS(
+    "results_lin_disc/data_pasing_laerm_knn_abgewertet.rds"
+  )
+}
+
+
+# ==============================================================================
+# 1. EINSTELLUNGEN
+# ==============================================================================
+
+delta_used <- 2.75
+prior_scale_used <- exp(delta_used) - 1
+
+cat("Erstelle Pasing-Gesamtkarte...\n")
+cat("Delta:", delta_used, "\n")
+cat("Prior scale:", round(prior_scale_used, 4), "\n")
+
+
+# ==============================================================================
+# 2. FARBEN DEFINIEREN
+# ==============================================================================
+
+wohnlage_farben_3 <- c(
+  "durchschnittliche Lage" = "#e8f5a4",
+  "gute Lage"              = "#afe391",
+  "beste Lage"             = "#7FCDBB"
+)
+
+change_pal <- colorNumeric(
+  palette = "YlOrRd",
+  domain = wohnlagen_pasing_analyse$anteil_geaendert_prozent,
+  na.color = "transparent"
+)
+
+
+# ==============================================================================
+# 3. GEOMETRIEN AUF WGS84 BRINGEN
+# ==============================================================================
+
+data_pasing_joined_wgs <- st_transform(data_pasing_joined, 4326)
+data_pasing_in_area_wgs <- st_transform(data_pasing_in_area, 4326)
+wohnlagen_pasing_analyse_wgs <- st_transform(wohnlagen_pasing_analyse, 4326)
+
+if (exists("problemgebiete_pasing")) {
+  problemgebiete_pasing_wgs <- st_transform(problemgebiete_pasing, 4326)
+}
+
+# Lärmdaten können Dataframe oder sf sein
+if (inherits(data_pasing_laerm_knn, "sf")) {
+  data_pasing_laerm_knn_wgs <- st_transform(data_pasing_laerm_knn, 4326)
+} else {
+  data_pasing_laerm_knn_wgs <- st_as_sf(
+    data_pasing_laerm_knn,
+    coords = c("s.long", "s.lat"),
+    crs = 4326,
+    remove = FALSE
+  )
+}
+
+
+# ==============================================================================
+# 4. MODELL-PUNKTE AUFBEREITEN
+# ==============================================================================
+
+modellpunkte_changed <- data_pasing_joined_wgs %>%
+  filter(changed == TRUE) %>%
+  mutate(
+    punktfarbe = unname(wohnlage_farben_3[wohnlage_neu])
+  )
+
+modellpunkte_unchanged <- data_pasing_joined_wgs %>%
+  filter(changed == FALSE) %>%
+  mutate(
+    punktfarbe = unname(wohnlage_farben_3[wohnlage_neu])
+  )
+
+
+# ==============================================================================
+# 5. LÄRMPUNKTE AUFBEREITEN
+# ==============================================================================
+
+data_pasing_laerm_knn_wgs <- data_pasing_laerm_knn_wgs %>%
+  mutate(
+    punktfarbe_laerm =
+      unname(wohnlage_farben_3[wohnlage_nach_laerm])
+  )
+
+
+# ==============================================================================
+# 6. POPUPS FÜR MODELL-PUNKTE
+# ==============================================================================
+
+popup_modellpunkte <- function(df) {
+  paste0(
+    "<b>Modellierter Pasing-Punkt</b><br>",
+    "<hr>",
+    "<b>Alte Wohnlage:</b> ", df$wohnlage_alt, "<br>",
+    "<b>Neue Wohnlage:</b> ",
+    ifelse(
+      df$changed,
+      paste0("<span style='color:red; font-weight:bold;'>", df$wohnlage_neu, "</span>"),
+      df$wohnlage_neu
+    ),
+    "<br>",
+    "<b>Umklassifiziert:</b> ", ifelse(df$changed, "Ja", "Nein"), "<br>",
+    "<hr>",
+    "<b>Score alt:</b> ", round(df$score_alt, 3), "<br>",
+    "<b>Score neu:</b> ", round(df$score_neu, 3), "<br>",
+    "<b>Realisierte Verbesserung:</b> ",
+    round(df$realized_improvement, 3), "<br>",
+    "<b>Potenzielle Verbesserung:</b> ",
+    round(df$potential_improvement, 3), "<br>",
+    "<b>Max. Prior-Wahrscheinlichkeit:</b> ",
+    round(df$prob_max * 100, 1), " %<br>",
+    "<hr>",
+    "<b>Flächen-ID:</b> ",
+    ifelse(is.na(df$flaechen_id), "keine Zuordnung", df$flaechen_id), "<br>"
+  )
+}
+
+modellpunkte_changed$popup_text <-
+  popup_modellpunkte(modellpunkte_changed)
+
+modellpunkte_unchanged$popup_text <-
+  popup_modellpunkte(modellpunkte_unchanged)
+
+
+# ==============================================================================
+# 7. POPUPS FÜR LÄRMPUNKTE
+# ==============================================================================
+
+popup_laermpunkte <- function(df) {
+  paste0(
+    "<b>Pasing-Lärmpunkt</b><br>",
+    "<hr>",
+    if ("wohnlage_alt_3cat" %in% names(df)) {
+      paste0("<b>Alte Wohnlage:</b> ", df$wohnlage_alt_3cat, "<br>")
+    } else {
+      ""
+    },
+    "<b>kNN-Basiswohnlage:</b> ", df$wohnlage_knn_basis, "<br>",
+    "<b>Finale Wohnlage nach Lärm-Abwertung:</b> ",
+    "<span style='color:red; font-weight:bold;'>",
+    df$wohnlage_nach_laerm,
+    "</span><br>",
+    "<b>Abgewertet durch Lärm:</b> ",
+    ifelse(df$abgewertet_durch_laerm, "Ja", "Nein"), "<br>",
+    "<hr>",
+    "<b>k:</b> ", df$knn_k, "<br>",
+    "<b>Mehrheitsanteil kNN:</b> ",
+    round(df$knn_vote_share * 100, 1), " %<br>",
+    "<b>Distanz nächster Nachbar:</b> ",
+    round(df$distanz_naechster_nachbar_m, 1), " m<br>",
+    "<b>Mittlere Distanz der k Nachbarn:</b> ",
+    round(df$distanz_mittlere_k_nachbarn_m, 1), " m<br>"
+  )
+}
+
+data_pasing_laerm_knn_wgs$popup_text <-
+  popup_laermpunkte(data_pasing_laerm_knn_wgs)
+
+
+# ==============================================================================
+# 8. POPUPS FÜR FLÄCHEN
+# ==============================================================================
+
+wohnlagen_pasing_analyse_wgs <- wohnlagen_pasing_analyse_wgs %>%
+  mutate(
+    popup_flaeche = paste0(
+      "<b>Wohnlagenfläche Pasing</b><br>",
+      "<hr>",
+      "<b>Flächen-ID:</b> ", flaechen_id, "<br>",
+      "<b>Bestehende Wohnlage:</b> ", Wohnlage, "<br>",
+      "<hr>",
+      "<b>Anzahl Wohnungen/Punkte:</b> ", n_wohnungen, "<br>",
+      "<b>Anzahl geändert:</b> ", n_geaendert, "<br>",
+      "<b>Anteil geändert:</b> ",
+      round(anteil_geaendert_prozent, 2), " %<br>",
+      "<hr>",
+      "<b>Mittlere realisierte Verbesserung:</b> ",
+      round(mittlere_realisierte_verbesserung, 3), "<br>",
+      "<b>Mittlere potenzielle Verbesserung:</b> ",
+      round(mittlere_potenzielle_verbesserung, 3), "<br>",
+      "<b>Mittlere max. Wahrscheinlichkeit:</b> ",
+      round(mittlere_max_prob * 100, 1), " %<br>",
+      "<hr>",
+      "<b>Häufigste alte Lage:</b> ", alte_lage_haeufig, "<br>",
+      "<b>Häufigste neue Lage:</b> ", neue_lage_haeufig, "<br>"
+    )
+  )
+
+
+# ==============================================================================
+# 9. POPUPS FÜR PROBLEMGEBIETE
+# ==============================================================================
+
+if (exists("problemgebiete_pasing_wgs")) {
+  
+  problemgebiete_pasing_wgs <- problemgebiete_pasing_wgs %>%
+    mutate(
+      popup_problemgebiet = paste0(
+        "<b>Potenzielles Problemgebiet</b><br>",
+        "<hr>",
+        "<b>Flächen-ID:</b> ", flaechen_id, "<br>",
+        "<b>Wohnlage:</b> ", Wohnlage, "<br>",
+        "<b>Anzahl Wohnungen/Punkte:</b> ", n_wohnungen, "<br>",
+        "<b>Anzahl geändert:</b> ", n_geaendert, "<br>",
+        "<b>Anteil geändert:</b> ",
+        round(anteil_geaendert_prozent, 2), " %<br>",
+        "<b>Mittlere realisierte Verbesserung:</b> ",
+        round(mittlere_realisierte_verbesserung, 3), "<br>"
+      )
+    )
+}
+
+
+# ==============================================================================
+# 10. KARTENMITTELPUNKT BESTIMMEN
+# ==============================================================================
+
+bbox_pasing <- st_bbox(wohnlagen_pasing_analyse_wgs)
+
+map_center_lng <- mean(c(bbox_pasing["xmin"], bbox_pasing["xmax"]))
+map_center_lat <- mean(c(bbox_pasing["ymin"], bbox_pasing["ymax"]))
+
+
+# ==============================================================================
+# 11. INTERAKTIVE KARTE ERSTELLEN
+# ==============================================================================
+
+karte_pasing_gesamt <- leaflet(
+  options = leafletOptions(preferCanvas = TRUE)
+) %>%
+  
+  addProviderTiles(
+    "CartoDB.Positron",
+    group = "Basiskarte"
+  ) %>%
+  
+  setView(
+    lng = map_center_lng,
+    lat = map_center_lat,
+    zoom = 13
+  ) %>%
+  
+  # --------------------------------------------------------------------------
+# Flächen nach Änderungsanteil
+# --------------------------------------------------------------------------
+addPolygons(
+  data = wohnlagen_pasing_analyse_wgs,
+  fillColor = ~change_pal(anteil_geaendert_prozent),
+  fillOpacity = 0.55,
+  color = "grey30",
+  weight = 1,
+  popup = ~popup_flaeche,
+  label = ~paste0(
+    "Fläche ", flaechen_id,
+    " | geändert: ",
+    round(anteil_geaendert_prozent, 1),
+    " %"
+  ),
+  group = "Flächen: Änderungsanteil"
+) %>%
+  
+  # --------------------------------------------------------------------------
+# Problemgebiete
+# --------------------------------------------------------------------------
+{
+  if (exists("problemgebiete_pasing_wgs")) {
+    addPolygons(
+      .,
+      data = problemgebiete_pasing_wgs,
+      fillColor = "red",
+      fillOpacity = 0.20,
+      color = "red",
+      weight = 3,
+      popup = ~popup_problemgebiet,
+      label = ~paste0(
+        "Problemgebiet Fläche ",
+        flaechen_id,
+        " | ",
+        round(anteil_geaendert_prozent, 1),
+        " % geändert"
+      ),
+      group = "Problemgebiete"
+    )
+  } else {
+    .
+  }
+} %>%
+  
+  # --------------------------------------------------------------------------
+# Modellpunkte: unverändert
+# --------------------------------------------------------------------------
+addCircleMarkers(
+  data = modellpunkte_unchanged,
+  lng = ~s.long,
+  lat = ~s.lat,
+  fillColor = ~punktfarbe,
+  fillOpacity = 0.75,
+  color = "black",
+  stroke = TRUE,
+  weight = 0.8,
+  radius = 4,
+  popup = ~popup_text,
+  group = "Modellpunkte: unverändert"
+) %>%
+  
+  # --------------------------------------------------------------------------
+# Modellpunkte: geändert
+# --------------------------------------------------------------------------
+addCircleMarkers(
+  data = modellpunkte_changed,
+  lng = ~s.long,
+  lat = ~s.lat,
+  fillColor = ~punktfarbe,
+  fillOpacity = 1,
+  color = "red",
+  stroke = TRUE,
+  weight = 2,
+  radius = 6,
+  popup = ~popup_text,
+  group = "Modellpunkte: umklassifiziert"
+) %>%
+  
+  # --------------------------------------------------------------------------
+# Lärmpunkte nach kNN + Abwertung
+# --------------------------------------------------------------------------
+addCircleMarkers(
+  data = data_pasing_laerm_knn_wgs,
+  lng = ~s.long,
+  lat = ~s.lat,
+  fillColor = ~punktfarbe_laerm,
+  fillOpacity = 1,
+  color = "#6a0000",
+  stroke = TRUE,
+  weight = 2.5,
+  radius = 7,
+  popup = ~popup_text,
+  group = "Lärmpunkte: kNN + Abwertung"
+) %>%
+  
+  # --------------------------------------------------------------------------
+# Legenden
+# --------------------------------------------------------------------------
+addLegend(
+  position = "bottomright",
+  colors = unname(wohnlage_farben_3),
+  labels = names(wohnlage_farben_3),
+  title = "Wohnlage",
+  opacity = 1
+) %>%
+  
+  addLegend(
+    position = "bottomleft",
+    pal = change_pal,
+    values = wohnlagen_pasing_analyse_wgs$anteil_geaendert_prozent,
+    title = "Anteil geändert<br>je Fläche (%)",
+    opacity = 0.9
+  ) %>%
+  
+  # --------------------------------------------------------------------------
+# Layer Control
+# --------------------------------------------------------------------------
+addLayersControl(
+  baseGroups = c("Basiskarte"),
+  overlayGroups = c(
+    "Flächen: Änderungsanteil",
+    "Problemgebiete",
+    "Modellpunkte: unverändert",
+    "Modellpunkte: umklassifiziert",
+    "Lärmpunkte: kNN + Abwertung"
+  ),
+  options = layersControlOptions(collapsed = FALSE)
+) %>%
+  
+  hideGroup("Modellpunkte: unverändert")
+
+
+# ==============================================================================
+# 12. KARTE SPEICHERN
+# ==============================================================================
+
+if (!dir.exists("interaktive_karten")) {
+  dir.create("interaktive_karten")
+}
+
+saveWidget(
+  karte_pasing_gesamt,
+  file = "interaktive_karten/karte_pasing_gesamtanalyse.html",
+  selfcontained = TRUE
+)
+
+cat("\n✓ Interaktive Gesamtkarte gespeichert:\n")
+cat("interaktive_karten/karte_pasing_gesamtanalyse.html\n")
+
+
+# ==============================================================================
+# 13. KURZE ZUSAMMENFASSUNG IN DER KONSOLE
+# ==============================================================================
+
+cat("\n====================================\n")
+cat("ZUSAMMENFASSUNG PASING-KARTE\n")
+cat("====================================\n")
+
+cat("Modellpunkte gesamt:",
+    nrow(data_pasing_joined_wgs), "\n")
+
+cat("Davon umklassifiziert:",
+    nrow(modellpunkte_changed), "\n")
+
+cat("Änderungsrate Modellpunkte:",
+    round(mean(data_pasing_joined_wgs$changed) * 100, 2),
+    "%\n")
+
+cat("Wohnlagenflächen mit Pasing-Punkten:",
+    nrow(wohnlagen_pasing_analyse_wgs), "\n")
+
+if (exists("problemgebiete_pasing_wgs")) {
+  cat("Problemgebiete:",
+      nrow(problemgebiete_pasing_wgs), "\n")
+}
+
+cat("Lärmpunkte:",
+    nrow(data_pasing_laerm_knn_wgs), "\n")
+
+cat("====================================\n")
+
