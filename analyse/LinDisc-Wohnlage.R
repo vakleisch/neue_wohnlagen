@@ -4904,53 +4904,206 @@ if ("wohnlage_alt_3cat" %in% names(data_pasing_laerm_knn)) {
 
 
 
+
+
+
+
+
+# Mietspiegeldatensatz klasifizieren
+mietspiegel  <- read.csv("daten/ADR_MSP27_20260513.csv", sep = ";",
+                         colClasses = c(adressid = "character"))
+# ==============================================================================
+# MIETSPIEGEL-PUNKTE PRÜFEN:
+# Liegen sie in einem problematischen Gebiet?
+# Grundlage:
+# - mietspiegel: Datensatz mit adressid
+# - raeumliche_daten: Adresspunkte mit Geometrie und adressid
+# - problemgebiete_pasing: problematische Wohnlagenflächen aus der Analyse
+# ==============================================================================
+
+library(sf)
+library(dplyr)
+
+# ==============================================================================
+# 1. ADRESS-ID SAUBER FORMATIEREN
+# ==============================================================================
+
+mietspiegel <- mietspiegel %>%
+  mutate(
+    adressid = as.character(adressid)
+  )
+
+raeumliche_daten <- raeumliche_daten %>%
+  mutate(
+    adressid = as.character(adressid)
+  )
+
+
+# ==============================================================================
+# 2. MIETSPIEGEL MIT RÄUMLICHEN ADRESSPUNKTEN MATCHEN
+# ==============================================================================
+
+mietspiegel_geo <- mietspiegel %>%
+  left_join(
+    raeumliche_daten %>%
+      select(adressid, geom),
+    by = "adressid"
+  ) %>%
+  st_as_sf(sf_column_name = "geom")
+
+cat("Mietspiegel-Zeilen insgesamt:", nrow(mietspiegel_geo), "\n")
+cat("Davon mit gefundener Geometrie:",
+    sum(!st_is_empty(mietspiegel_geo$geom)), "\n")
+cat("Davon ohne gefundene Geometrie:",
+    sum(st_is_empty(mietspiegel_geo$geom)), "\n")
+
+
+# ==============================================================================
+# 3. CRS ANGLEICHEN
+# ==============================================================================
+
+if (st_crs(mietspiegel_geo) != st_crs(problemgebiete_pasing)) {
+  mietspiegel_geo <- st_transform(
+    mietspiegel_geo,
+    st_crs(problemgebiete_pasing)
+  )
+}
+
+
+# ==============================================================================
+# 4. PRÜFEN, OB MIETSPIEGEL-PUNKTE IN PROBLEMGEBIETEN LIEGEN
+# ==============================================================================
+
+trefferliste <- st_intersects(
+  mietspiegel_geo,
+  problemgebiete_pasing
+)
+
+mietspiegel_geo$in_problemgebiet <- lengths(trefferliste) > 0
+
+cat("\n====================================\n")
+cat("ERGEBNIS\n")
+cat("====================================\n")
+cat("Mietspiegel-Punkte insgesamt:",
+    nrow(mietspiegel_geo), "\n")
+cat("Punkte in problematischem Gebiet:",
+    sum(mietspiegel_geo$in_problemgebiet, na.rm = TRUE), "\n")
+cat("Anteil in problematischem Gebiet:",
+    round(mean(mietspiegel_geo$in_problemgebiet, na.rm = TRUE) * 100, 2),
+    "%\n")
+cat("====================================\n")
+
+
+# ==============================================================================
+# 5. PROBLEMGEBIETS-ID ANHÄNGEN
+# ==============================================================================
+
+mietspiegel_geo$problemgebiet_flaechen_id <- sapply(
+  trefferliste,
+  function(x) {
+    if (length(x) == 0) {
+      NA_integer_
+    } else {
+      problemgebiete_pasing$flaechen_id[x[1]]
+    }
+  }
+)
+
+
+# ==============================================================================
+# 6. BETROFFENE MIETSPIEGEL-PUNKTE AUSGEBEN
+# ==============================================================================
+
+mietspiegel_in_problemgebieten <- mietspiegel_geo %>%
+  filter(in_problemgebiet == TRUE)
+
+cat("\nBetroffene Mietspiegel-Punkte:\n")
+
+mietspiegel_in_problemgebieten %>%
+  st_drop_geometry() %>%
+  select(
+    adressid,
+    everything(),
+    problemgebiet_flaechen_id
+  ) %>%
+  print()
+
+
+# ==============================================================================
+# 7. OPTIONAL: ÜBERSICHT NACH PROBLEMGEBIET
+# ==============================================================================
+
+mietspiegel_problemgebiet_summary <- mietspiegel_geo %>%
+  st_drop_geometry() %>%
+  filter(in_problemgebiet == TRUE) %>%
+  count(
+    problemgebiet_flaechen_id,
+    name = "anzahl_mietspiegel_punkte"
+  ) %>%
+  arrange(desc(anzahl_mietspiegel_punkte))
+
+print(mietspiegel_problemgebiet_summary)
+
+
+
+
+
+
 # ==============================================================================
 # INTERAKTIVE GESAMTKARTE PASING
-# - Prior-Delta-Modell
-# - Flächenanalyse
-# - Problemgebiete
-# - kNN-Lärmpunkte mit Abwertung
+# - Wohnlagenflächen in Wohnlagefarben
+# - Problemgebiete mit rotem Rand
+# - Modellpunkte: geändert / unverändert
+# - Lärmpunkte: kNN + Abwertung
+# - Mietspiegel-Punkte: Problemgebiet ja/nein
 # ==============================================================================
 
 library(sf)
 library(dplyr)
 library(leaflet)
 library(htmlwidgets)
-library(scales)
 
 # ==============================================================================
-# 0. OBJEKTE PRÜFEN / FALLBACKS LADEN
+# 0. VORAUSSETZUNGEN PRÜFEN
 # ==============================================================================
 
-# Erwartete Objekte:
-# data_pasing_joined
-# data_pasing_in_area
-# wohnlagen_pasing_analyse
-# problemgebiete_pasing
-# data_pasing_laerm_knn
+# Erwartete Objekte aus den vorherigen Schritten:
+# - data_pasing_joined
+# - wohnlagen_pasing_analyse
+# - problemgebiete_pasing
+# - data_pasing_laerm_knn
+# - mietspiegel
+# - raeumliche_daten
 
-if (!exists("data_pasing_joined")) {
-  data_pasing_joined <- readRDS(
-    "results_lin_disc/data_pasing_joined_prior_delta_2_75_mit_laerm.rds"
+required_objects <- c(
+  "data_pasing_joined",
+  "wohnlagen_pasing_analyse",
+  "data_pasing_laerm_knn",
+  "mietspiegel",
+  "raeumliche_daten"
+)
+
+missing_objects <- required_objects[
+  !vapply(required_objects, exists, logical(1))
+]
+
+if (length(missing_objects) > 0) {
+  stop(
+    paste(
+      "Folgende Objekte fehlen im Workspace:",
+      paste(missing_objects, collapse = ", ")
+    )
   )
 }
 
-if (!exists("data_pasing_in_area")) {
-  data_pasing_in_area <- readRDS(
-    "results_lin_disc/data_pasing_in_area_prior_delta_2_75_mit_laerm.rds"
-  )
-}
-
-if (!exists("wohnlagen_pasing_analyse")) {
-  wohnlagen_pasing_analyse <- readRDS(
-    "results_lin_disc/wohnlagen_pasing_aenderungsanteil_delta_2_75_mit_laerm.rds"
-  )
-}
-
-if (!exists("data_pasing_laerm_knn")) {
-  data_pasing_laerm_knn <- readRDS(
-    "results_lin_disc/data_pasing_laerm_knn_abgewertet.rds"
-  )
+# Problemgebiete bei Bedarf neu erzeugen
+if (!exists("problemgebiete_pasing")) {
+  problemgebiete_pasing <- wohnlagen_pasing_analyse %>%
+    filter(
+      n_wohnungen >= 20,
+      anteil_geaendert >= 0.20
+    ) %>%
+    arrange(desc(anteil_geaendert), desc(n_geaendert))
 }
 
 
@@ -4967,7 +5120,7 @@ cat("Prior scale:", round(prior_scale_used, 4), "\n")
 
 
 # ==============================================================================
-# 2. FARBEN DEFINIEREN
+# 2. WOHNLAGEFARBEN
 # ==============================================================================
 
 wohnlage_farben_3 <- c(
@@ -4976,26 +5129,41 @@ wohnlage_farben_3 <- c(
   "beste Lage"             = "#7FCDBB"
 )
 
-change_pal <- colorNumeric(
-  palette = "YlOrRd",
-  domain = wohnlagen_pasing_analyse$anteil_geaendert_prozent,
-  na.color = "transparent"
-)
+
+# ==============================================================================
+# 3. HILFSFUNKTIONEN
+# ==============================================================================
+
+clean_wohnlage <- function(x) {
+  trimws(gsub("zentrale", "", as.character(x), ignore.case = TRUE))
+}
+
+safe_col_text <- function(df, colname, prefix = "") {
+  if (colname %in% names(df)) {
+    paste0(prefix, df[[colname]])
+  } else {
+    rep("", nrow(df))
+  }
+}
 
 
 # ==============================================================================
-# 3. GEOMETRIEN AUF WGS84 BRINGEN
+# 4. GEOMETRIEN AUF WGS84 BRINGEN
 # ==============================================================================
 
 data_pasing_joined_wgs <- st_transform(data_pasing_joined, 4326)
-data_pasing_in_area_wgs <- st_transform(data_pasing_in_area, 4326)
-wohnlagen_pasing_analyse_wgs <- st_transform(wohnlagen_pasing_analyse, 4326)
 
-if (exists("problemgebiete_pasing")) {
-  problemgebiete_pasing_wgs <- st_transform(problemgebiete_pasing, 4326)
-}
+wohnlagen_pasing_analyse_wgs <- st_transform(
+  wohnlagen_pasing_analyse,
+  4326
+)
 
-# Lärmdaten können Dataframe oder sf sein
+problemgebiete_pasing_wgs <- st_transform(
+  problemgebiete_pasing,
+  4326
+)
+
+# Lärmdaten können data.frame oder sf sein
 if (inherits(data_pasing_laerm_knn, "sf")) {
   data_pasing_laerm_knn_wgs <- st_transform(data_pasing_laerm_knn, 4326)
 } else {
@@ -5009,7 +5177,23 @@ if (inherits(data_pasing_laerm_knn, "sf")) {
 
 
 # ==============================================================================
-# 4. MODELL-PUNKTE AUFBEREITEN
+# 5. WOHNLAGENFLÄCHEN AUFBEREITEN
+# ==============================================================================
+
+wohnlagen_pasing_analyse_wgs <- wohnlagen_pasing_analyse_wgs %>%
+  mutate(
+    Wohnlage_3cat = clean_wohnlage(Wohnlage),
+    flaechenfarbe = unname(wohnlage_farben_3[Wohnlage_3cat])
+  )
+
+problemgebiete_pasing_wgs <- problemgebiete_pasing_wgs %>%
+  mutate(
+    Wohnlage_3cat = clean_wohnlage(Wohnlage)
+  )
+
+
+# ==============================================================================
+# 6. MODELLPUNKTE AUFBEREITEN
 # ==============================================================================
 
 modellpunkte_changed <- data_pasing_joined_wgs %>%
@@ -5026,7 +5210,7 @@ modellpunkte_unchanged <- data_pasing_joined_wgs %>%
 
 
 # ==============================================================================
-# 5. LÄRMPUNKTE AUFBEREITEN
+# 7. LÄRMPUNKTE AUFBEREITEN
 # ==============================================================================
 
 data_pasing_laerm_knn_wgs <- data_pasing_laerm_knn_wgs %>%
@@ -5037,7 +5221,96 @@ data_pasing_laerm_knn_wgs <- data_pasing_laerm_knn_wgs %>%
 
 
 # ==============================================================================
-# 6. POPUPS FÜR MODELL-PUNKTE
+# 8. MIETSPIEGEL-PUNKTE MIT GEOMETRIE MATCHEN
+# ==============================================================================
+
+mietspiegel <- mietspiegel %>%
+  mutate(adressid = as.character(adressid))
+
+raeumliche_daten <- raeumliche_daten %>%
+  mutate(adressid = as.character(adressid))
+
+mietspiegel_geo <- mietspiegel %>%
+  left_join(
+    raeumliche_daten %>%
+      select(adressid, geom),
+    by = "adressid"
+  ) %>%
+  st_as_sf(sf_column_name = "geom")
+
+# Nur Punkte mit Geometrie behalten
+mietspiegel_geo <- mietspiegel_geo %>%
+  filter(!st_is_empty(geom))
+
+cat("Mietspiegel-Punkte mit Geometrie:", nrow(mietspiegel_geo), "\n")
+
+
+# ==============================================================================
+# 9. MIETSPIEGEL-PUNKTE GEGEN PROBLEMGEBIETE PRÜFEN
+# ==============================================================================
+
+if (st_crs(mietspiegel_geo) != st_crs(problemgebiete_pasing)) {
+  mietspiegel_geo <- st_transform(
+    mietspiegel_geo,
+    st_crs(problemgebiete_pasing)
+  )
+}
+
+treffer_problemgebiete <- st_intersects(
+  mietspiegel_geo,
+  problemgebiete_pasing
+)
+
+mietspiegel_geo$in_problemgebiet <-
+  lengths(treffer_problemgebiete) > 0
+
+mietspiegel_geo$problemgebiet_flaechen_id <- sapply(
+  treffer_problemgebiete,
+  function(x) {
+    if (length(x) == 0) {
+      NA_integer_
+    } else {
+      problemgebiete_pasing$flaechen_id[x[1]]
+    }
+  }
+)
+
+cat(
+  "Mietspiegel-Punkte in Problemgebieten:",
+  sum(mietspiegel_geo$in_problemgebiet),
+  "\n"
+)
+
+cat(
+  "Mietspiegel-Punkte außerhalb von Problemgebieten:",
+  sum(!mietspiegel_geo$in_problemgebiet),
+  "\n"
+)
+
+
+# ==============================================================================
+# 10. MIETSPIEGEL NACH WGS84 BRINGEN
+# ==============================================================================
+
+mietspiegel_geo_wgs <- st_transform(mietspiegel_geo, 4326)
+
+coords_mietspiegel <- st_coordinates(mietspiegel_geo_wgs)
+
+mietspiegel_geo_wgs <- mietspiegel_geo_wgs %>%
+  mutate(
+    s.long = coords_mietspiegel[, 1],
+    s.lat  = coords_mietspiegel[, 2]
+  )
+
+mietspiegel_problem <- mietspiegel_geo_wgs %>%
+  filter(in_problemgebiet == TRUE)
+
+mietspiegel_nicht_problem <- mietspiegel_geo_wgs %>%
+  filter(in_problemgebiet == FALSE)
+
+
+# ==============================================================================
+# 11. POPUPS: MODELLPUNKTE
 # ==============================================================================
 
 popup_modellpunkte <- function(df) {
@@ -5048,23 +5321,40 @@ popup_modellpunkte <- function(df) {
     "<b>Neue Wohnlage:</b> ",
     ifelse(
       df$changed,
-      paste0("<span style='color:red; font-weight:bold;'>", df$wohnlage_neu, "</span>"),
+      paste0(
+        "<span style='color:red; font-weight:bold;'>",
+        df$wohnlage_neu,
+        "</span>"
+      ),
       df$wohnlage_neu
     ),
     "<br>",
-    "<b>Umklassifiziert:</b> ", ifelse(df$changed, "Ja", "Nein"), "<br>",
+    "<b>Umklassifiziert:</b> ",
+    ifelse(df$changed, "Ja", "Nein"),
+    "<br>",
+    "<b>Lärmwert:</b> ",
+    ifelse(is.na(df$laerm), "n. v.", df$laerm),
+    "<br>",
     "<hr>",
-    "<b>Score alt:</b> ", round(df$score_alt, 3), "<br>",
-    "<b>Score neu:</b> ", round(df$score_neu, 3), "<br>",
+    "<b>Score alt:</b> ",
+    round(df$score_alt, 3),
+    "<br>",
+    "<b>Score neu:</b> ",
+    round(df$score_neu, 3),
+    "<br>",
     "<b>Realisierte Verbesserung:</b> ",
-    round(df$realized_improvement, 3), "<br>",
+    round(df$realized_improvement, 3),
+    "<br>",
     "<b>Potenzielle Verbesserung:</b> ",
-    round(df$potential_improvement, 3), "<br>",
+    round(df$potential_improvement, 3),
+    "<br>",
     "<b>Max. Prior-Wahrscheinlichkeit:</b> ",
-    round(df$prob_max * 100, 1), " %<br>",
+    round(df$prob_max * 100, 1),
+    " %<br>",
     "<hr>",
     "<b>Flächen-ID:</b> ",
-    ifelse(is.na(df$flaechen_id), "keine Zuordnung", df$flaechen_id), "<br>"
+    ifelse(is.na(df$flaechen_id), "keine Zuordnung", df$flaechen_id),
+    "<br>"
   )
 }
 
@@ -5076,7 +5366,7 @@ modellpunkte_unchanged$popup_text <-
 
 
 # ==============================================================================
-# 7. POPUPS FÜR LÄRMPUNKTE
+# 12. POPUPS: LÄRMPUNKTE
 # ==============================================================================
 
 popup_laermpunkte <- function(df) {
@@ -5084,25 +5374,40 @@ popup_laermpunkte <- function(df) {
     "<b>Pasing-Lärmpunkt</b><br>",
     "<hr>",
     if ("wohnlage_alt_3cat" %in% names(df)) {
-      paste0("<b>Alte Wohnlage:</b> ", df$wohnlage_alt_3cat, "<br>")
+      paste0(
+        "<b>Alte Wohnlage:</b> ",
+        df$wohnlage_alt_3cat,
+        "<br>"
+      )
     } else {
       ""
     },
-    "<b>kNN-Basiswohnlage:</b> ", df$wohnlage_knn_basis, "<br>",
+    "<b>Lärmwert:</b> ",
+    ifelse(is.na(df$laerm), "n. v.", df$laerm),
+    "<br>",
+    "<b>kNN-Basiswohnlage:</b> ",
+    df$wohnlage_knn_basis,
+    "<br>",
     "<b>Finale Wohnlage nach Lärm-Abwertung:</b> ",
     "<span style='color:red; font-weight:bold;'>",
     df$wohnlage_nach_laerm,
     "</span><br>",
     "<b>Abgewertet durch Lärm:</b> ",
-    ifelse(df$abgewertet_durch_laerm, "Ja", "Nein"), "<br>",
+    ifelse(df$abgewertet_durch_laerm, "Ja", "Nein"),
+    "<br>",
     "<hr>",
-    "<b>k:</b> ", df$knn_k, "<br>",
+    "<b>k:</b> ",
+    df$knn_k,
+    "<br>",
     "<b>Mehrheitsanteil kNN:</b> ",
-    round(df$knn_vote_share * 100, 1), " %<br>",
+    round(df$knn_vote_share * 100, 1),
+    " %<br>",
     "<b>Distanz nächster Nachbar:</b> ",
-    round(df$distanz_naechster_nachbar_m, 1), " m<br>",
+    round(df$distanz_naechster_nachbar_m, 1),
+    " m<br>",
     "<b>Mittlere Distanz der k Nachbarn:</b> ",
-    round(df$distanz_mittlere_k_nachbarn_m, 1), " m<br>"
+    round(df$distanz_mittlere_k_nachbarn_m, 1),
+    " m<br>"
   )
 }
 
@@ -5111,7 +5416,7 @@ data_pasing_laerm_knn_wgs$popup_text <-
 
 
 # ==============================================================================
-# 8. POPUPS FÜR FLÄCHEN
+# 13. POPUPS: WOHNLAGENFLÄCHEN
 # ==============================================================================
 
 wohnlagen_pasing_analyse_wgs <- wohnlagen_pasing_analyse_wgs %>%
@@ -5120,52 +5425,124 @@ wohnlagen_pasing_analyse_wgs <- wohnlagen_pasing_analyse_wgs %>%
       "<b>Wohnlagenfläche Pasing</b><br>",
       "<hr>",
       "<b>Flächen-ID:</b> ", flaechen_id, "<br>",
-      "<b>Bestehende Wohnlage:</b> ", Wohnlage, "<br>",
+      "<b>Wohnlage:</b> ", Wohnlage_3cat, "<br>",
       "<hr>",
-      "<b>Anzahl Wohnungen/Punkte:</b> ", n_wohnungen, "<br>",
-      "<b>Anzahl geändert:</b> ", n_geaendert, "<br>",
+      "<b>Anzahl Wohnungen/Punkte:</b> ",
+      n_wohnungen,
+      "<br>",
+      "<b>Anzahl geändert:</b> ",
+      n_geaendert,
+      "<br>",
       "<b>Anteil geändert:</b> ",
-      round(anteil_geaendert_prozent, 2), " %<br>",
+      round(anteil_geaendert_prozent, 2),
+      " %<br>",
       "<hr>",
       "<b>Mittlere realisierte Verbesserung:</b> ",
-      round(mittlere_realisierte_verbesserung, 3), "<br>",
+      round(mittlere_realisierte_verbesserung, 3),
+      "<br>",
       "<b>Mittlere potenzielle Verbesserung:</b> ",
-      round(mittlere_potenzielle_verbesserung, 3), "<br>",
+      round(mittlere_potenzielle_verbesserung, 3),
+      "<br>",
       "<b>Mittlere max. Wahrscheinlichkeit:</b> ",
-      round(mittlere_max_prob * 100, 1), " %<br>",
+      round(mittlere_max_prob * 100, 1),
+      " %<br>",
       "<hr>",
-      "<b>Häufigste alte Lage:</b> ", alte_lage_haeufig, "<br>",
-      "<b>Häufigste neue Lage:</b> ", neue_lage_haeufig, "<br>"
+      "<b>Häufigste alte Lage:</b> ",
+      alte_lage_haeufig,
+      "<br>",
+      "<b>Häufigste neue Lage:</b> ",
+      neue_lage_haeufig,
+      "<br>"
     )
   )
 
 
 # ==============================================================================
-# 9. POPUPS FÜR PROBLEMGEBIETE
+# 14. POPUPS: PROBLEMGEBIETE
 # ==============================================================================
 
-if (exists("problemgebiete_pasing_wgs")) {
-  
-  problemgebiete_pasing_wgs <- problemgebiete_pasing_wgs %>%
-    mutate(
-      popup_problemgebiet = paste0(
-        "<b>Potenzielles Problemgebiet</b><br>",
-        "<hr>",
-        "<b>Flächen-ID:</b> ", flaechen_id, "<br>",
-        "<b>Wohnlage:</b> ", Wohnlage, "<br>",
-        "<b>Anzahl Wohnungen/Punkte:</b> ", n_wohnungen, "<br>",
-        "<b>Anzahl geändert:</b> ", n_geaendert, "<br>",
-        "<b>Anteil geändert:</b> ",
-        round(anteil_geaendert_prozent, 2), " %<br>",
-        "<b>Mittlere realisierte Verbesserung:</b> ",
-        round(mittlere_realisierte_verbesserung, 3), "<br>"
-      )
+problemgebiete_pasing_wgs <- problemgebiete_pasing_wgs %>%
+  mutate(
+    popup_problemgebiet = paste0(
+      "<b>Potenzielles Problemgebiet</b><br>",
+      "<hr>",
+      "<b>Flächen-ID:</b> ",
+      flaechen_id,
+      "<br>",
+      "<b>Wohnlage:</b> ",
+      Wohnlage_3cat,
+      "<br>",
+      "<b>Anzahl Wohnungen/Punkte:</b> ",
+      n_wohnungen,
+      "<br>",
+      "<b>Anzahl geändert:</b> ",
+      n_geaendert,
+      "<br>",
+      "<b>Anteil geändert:</b> ",
+      round(anteil_geaendert_prozent, 2),
+      " %<br>",
+      "<b>Mittlere realisierte Verbesserung:</b> ",
+      round(mittlere_realisierte_verbesserung, 3),
+      "<br>"
     )
-}
+  )
 
 
 # ==============================================================================
-# 10. KARTENMITTELPUNKT BESTIMMEN
+# 15. POPUPS: MIETSPIEGEL-PUNKTE
+# ==============================================================================
+
+mietspiegel_geo_wgs <- mietspiegel_geo_wgs %>%
+  mutate(
+    popup_mietspiegel = paste0(
+      "<b>Mietspiegel-Punkt</b><br>",
+      "<hr>",
+      "<b>Adress-ID:</b> ",
+      adressid,
+      "<br>",
+      ifelse(
+        "adresse_1" %in% names(mietspiegel_geo_wgs),
+        paste0("<b>Adresse:</b> ", adresse_1, "<br>"),
+        ""
+      ),
+      ifelse(
+        "adresse_2" %in% names(mietspiegel_geo_wgs),
+        paste0("<b>PLZ:</b> ", adresse_2, "<br>"),
+        ""
+      ),
+      ifelse(
+        "adresse_3" %in% names(mietspiegel_geo_wgs),
+        paste0("<b>Ort:</b> ", adresse_3, "<br>"),
+        ""
+      ),
+      ifelse(
+        "adresse_4" %in% names(mietspiegel_geo_wgs),
+        paste0("<b>Gebiet:</b> ", adresse_4, "<br>"),
+        ""
+      ),
+      "<hr>",
+      "<b>In Problemgebiet:</b> ",
+      ifelse(in_problemgebiet, "Ja", "Nein"),
+      "<br>",
+      "<b>Problemgebiet-Flächen-ID:</b> ",
+      ifelse(
+        is.na(problemgebiet_flaechen_id),
+        "-",
+        problemgebiet_flaechen_id
+      ),
+      "<br>"
+    )
+  )
+
+mietspiegel_problem <- mietspiegel_geo_wgs %>%
+  filter(in_problemgebiet == TRUE)
+
+mietspiegel_nicht_problem <- mietspiegel_geo_wgs %>%
+  filter(in_problemgebiet == FALSE)
+
+
+# ==============================================================================
+# 16. KARTENMITTELPUNKT
 # ==============================================================================
 
 bbox_pasing <- st_bbox(wohnlagen_pasing_analyse_wgs)
@@ -5175,7 +5552,7 @@ map_center_lat <- mean(c(bbox_pasing["ymin"], bbox_pasing["ymax"]))
 
 
 # ==============================================================================
-# 11. INTERAKTIVE KARTE ERSTELLEN
+# 17. KARTE ERSTELLEN
 # ==============================================================================
 
 karte_pasing_gesamt <- leaflet(
@@ -5194,50 +5571,46 @@ karte_pasing_gesamt <- leaflet(
   ) %>%
   
   # --------------------------------------------------------------------------
-# Flächen nach Änderungsanteil
+# Wohnlagenflächen in Wohnlagefarben
 # --------------------------------------------------------------------------
 addPolygons(
   data = wohnlagen_pasing_analyse_wgs,
-  fillColor = ~change_pal(anteil_geaendert_prozent),
-  fillOpacity = 0.55,
-  color = "grey30",
+  fillColor = ~flaechenfarbe,
+  fillOpacity = 0.60,
+  color = "grey35",
   weight = 1,
   popup = ~popup_flaeche,
   label = ~paste0(
-    "Fläche ", flaechen_id,
-    " | geändert: ",
+    "Fläche ",
+    flaechen_id,
+    " | ",
+    Wohnlage_3cat,
+    " | ",
     round(anteil_geaendert_prozent, 1),
-    " %"
+    " % geändert"
   ),
-  group = "Flächen: Änderungsanteil"
+  group = "Wohnlagenflächen"
 ) %>%
   
   # --------------------------------------------------------------------------
-# Problemgebiete
+# Problemgebiete nur mit rotem Rand
 # --------------------------------------------------------------------------
-{
-  if (exists("problemgebiete_pasing_wgs")) {
-    addPolygons(
-      .,
-      data = problemgebiete_pasing_wgs,
-      fillColor = "red",
-      fillOpacity = 0.20,
-      color = "red",
-      weight = 3,
-      popup = ~popup_problemgebiet,
-      label = ~paste0(
-        "Problemgebiet Fläche ",
-        flaechen_id,
-        " | ",
-        round(anteil_geaendert_prozent, 1),
-        " % geändert"
-      ),
-      group = "Problemgebiete"
-    )
-  } else {
-    .
-  }
-} %>%
+addPolygons(
+  data = problemgebiete_pasing_wgs,
+  fillColor = "transparent",
+  fillOpacity = 0,
+  color = "red",
+  weight = 4,
+  popup = ~popup_problemgebiet,
+  label = ~paste0(
+    "Problemgebiet Fläche ",
+    flaechen_id,
+    " | ",
+    round(anteil_geaendert_prozent, 1),
+    " % geändert"
+  ),
+  group = "Problemgebiete"
+) %>%
   
   # --------------------------------------------------------------------------
 # Modellpunkte: unverändert
@@ -5257,7 +5630,7 @@ addCircleMarkers(
 ) %>%
   
   # --------------------------------------------------------------------------
-# Modellpunkte: geändert
+# Modellpunkte: umklassifiziert
 # --------------------------------------------------------------------------
 addCircleMarkers(
   data = modellpunkte_changed,
@@ -5274,7 +5647,7 @@ addCircleMarkers(
 ) %>%
   
   # --------------------------------------------------------------------------
-# Lärmpunkte nach kNN + Abwertung
+# Lärmpunkte kNN + Abwertung
 # --------------------------------------------------------------------------
 addCircleMarkers(
   data = data_pasing_laerm_knn_wgs,
@@ -5291,7 +5664,41 @@ addCircleMarkers(
 ) %>%
   
   # --------------------------------------------------------------------------
-# Legenden
+# Mietspiegel-Punkte in Problemgebieten
+# --------------------------------------------------------------------------
+addCircleMarkers(
+  data = mietspiegel_problem,
+  lng = ~s.long,
+  lat = ~s.lat,
+  fillColor = "red",
+  fillOpacity = 1,
+  color = "darkred",
+  stroke = TRUE,
+  weight = 2.5,
+  radius = 9,
+  popup = ~popup_mietspiegel,
+  group = "Mietspiegel: in Problemgebiet"
+) %>%
+  
+  # --------------------------------------------------------------------------
+# Mietspiegel-Punkte außerhalb Problemgebieten
+# --------------------------------------------------------------------------
+addCircleMarkers(
+  data = mietspiegel_nicht_problem,
+  lng = ~s.long,
+  lat = ~s.lat,
+  fillColor = "blue",
+  fillOpacity = 0.9,
+  color = "darkblue",
+  stroke = TRUE,
+  weight = 2,
+  radius = 7,
+  popup = ~popup_mietspiegel,
+  group = "Mietspiegel: nicht in Problemgebiet"
+) %>%
+  
+  # --------------------------------------------------------------------------
+# Wohnlagen-Legende
 # --------------------------------------------------------------------------
 addLegend(
   position = "bottomright",
@@ -5301,25 +5708,19 @@ addLegend(
   opacity = 1
 ) %>%
   
-  addLegend(
-    position = "bottomleft",
-    pal = change_pal,
-    values = wohnlagen_pasing_analyse_wgs$anteil_geaendert_prozent,
-    title = "Anteil geändert<br>je Fläche (%)",
-    opacity = 0.9
-  ) %>%
-  
   # --------------------------------------------------------------------------
 # Layer Control
 # --------------------------------------------------------------------------
 addLayersControl(
   baseGroups = c("Basiskarte"),
   overlayGroups = c(
-    "Flächen: Änderungsanteil",
+    "Wohnlagenflächen",
     "Problemgebiete",
     "Modellpunkte: unverändert",
     "Modellpunkte: umklassifiziert",
-    "Lärmpunkte: kNN + Abwertung"
+    "Lärmpunkte: kNN + Abwertung",
+    "Mietspiegel: in Problemgebiet",
+    "Mietspiegel: nicht in Problemgebiet"
   ),
   options = layersControlOptions(collapsed = FALSE)
 ) %>%
@@ -5328,7 +5729,7 @@ addLayersControl(
 
 
 # ==============================================================================
-# 12. KARTE SPEICHERN
+# 18. KARTE SPEICHERN
 # ==============================================================================
 
 if (!dir.exists("interaktive_karten")) {
@@ -5337,16 +5738,16 @@ if (!dir.exists("interaktive_karten")) {
 
 saveWidget(
   karte_pasing_gesamt,
-  file = "interaktive_karten/karte_pasing_gesamtanalyse.html",
-  selfcontained = TRUE
+  file = "interaktive_karten/karte_pasing_gesamtanalyse_mit_mietspiegel.html",
+  selfcontained = FALSE
 )
 
-cat("\n✓ Interaktive Gesamtkarte gespeichert:\n")
-cat("interaktive_karten/karte_pasing_gesamtanalyse.html\n")
+cat("\n✓ Interaktive Karte gespeichert:\n")
+cat("interaktive_karten/karte_pasing_gesamtanalyse_mit_mietspiegel.html\n")
 
 
 # ==============================================================================
-# 13. KURZE ZUSAMMENFASSUNG IN DER KONSOLE
+# 19. ZUSAMMENFASSUNG IN DER KONSOLE
 # ==============================================================================
 
 cat("\n====================================\n")
@@ -5366,13 +5767,278 @@ cat("Änderungsrate Modellpunkte:",
 cat("Wohnlagenflächen mit Pasing-Punkten:",
     nrow(wohnlagen_pasing_analyse_wgs), "\n")
 
-if (exists("problemgebiete_pasing_wgs")) {
-  cat("Problemgebiete:",
-      nrow(problemgebiete_pasing_wgs), "\n")
-}
+cat("Problemgebiete:",
+    nrow(problemgebiete_pasing_wgs), "\n")
 
 cat("Lärmpunkte:",
     nrow(data_pasing_laerm_knn_wgs), "\n")
 
+cat("Mietspiegel-Punkte gesamt:",
+    nrow(mietspiegel_geo_wgs), "\n")
+
+cat("Mietspiegel-Punkte in Problemgebieten:",
+    nrow(mietspiegel_problem), "\n")
+
+cat("Mietspiegel-Punkte nicht in Problemgebieten:",
+    nrow(mietspiegel_nicht_problem), "\n")
+
 cat("====================================\n")
 
+
+
+
+
+# ==============================================================================
+# MIETSPIEGEL-PUNKTE ZUR BESTEHENDEN PASING-KARTE HINZUFÜGEN
+# ==============================================================================
+
+library(sf)
+library(dplyr)
+library(leaflet)
+library(htmlwidgets)
+
+# ==============================================================================
+# 1. VORAUSSETZUNGEN PRÜFEN
+# ==============================================================================
+
+# Erwartet:
+# - mietspiegel
+# - raeumliche_daten
+# - problemgebiete_pasing
+# - karte_pasing_gesamt
+
+if (!exists("mietspiegel")) {
+  stop("Objekt 'mietspiegel' wurde nicht gefunden.")
+}
+
+if (!exists("raeumliche_daten")) {
+  stop("Objekt 'raeumliche_daten' wurde nicht gefunden.")
+}
+
+if (!exists("problemgebiete_pasing")) {
+  stop("Objekt 'problemgebiete_pasing' wurde nicht gefunden.")
+}
+
+if (!exists("karte_pasing_gesamt")) {
+  stop("Objekt 'karte_pasing_gesamt' wurde nicht gefunden. Bitte zuerst die Pasing-Karte erzeugen.")
+}
+
+
+# ==============================================================================
+# 2. ADRESS-ID SAUBER FORMATIEREN
+# ==============================================================================
+
+mietspiegel <- mietspiegel %>%
+  mutate(
+    adressid = as.character(adressid)
+  )
+
+raeumliche_daten <- raeumliche_daten %>%
+  mutate(
+    adressid = as.character(adressid)
+  )
+
+
+# ==============================================================================
+# 3. MIETSPIEGEL MIT RÄUMLICHEN ADRESSPUNKTEN MATCHEN
+# ==============================================================================
+
+mietspiegel_geo <- mietspiegel %>%
+  left_join(
+    raeumliche_daten %>%
+      select(adressid, geom),
+    by = "adressid"
+  ) %>%
+  st_as_sf(sf_column_name = "geom")
+
+cat("Mietspiegel-Zeilen insgesamt:", nrow(mietspiegel_geo), "\n")
+
+
+# ==============================================================================
+# 4. PUNKTE OHNE GEOMETRIE AUSSORTIEREN
+# ==============================================================================
+
+mietspiegel_geo <- mietspiegel_geo %>%
+  filter(!st_is_empty(geom))
+
+cat("Mietspiegel-Punkte mit Geometrie:", nrow(mietspiegel_geo), "\n")
+
+
+# ==============================================================================
+# 5. CRS AN PROBLEMGEBIETE ANGLEICHEN
+# ==============================================================================
+
+if (st_crs(mietspiegel_geo) != st_crs(problemgebiete_pasing)) {
+  mietspiegel_geo <- st_transform(
+    mietspiegel_geo,
+    st_crs(problemgebiete_pasing)
+  )
+}
+
+
+# ==============================================================================
+# 6. PRÜFEN, OB MIETSPIEGEL-PUNKTE IN PROBLEMGEBIETEN LIEGEN
+# ==============================================================================
+
+trefferliste <- st_intersects(
+  mietspiegel_geo,
+  problemgebiete_pasing
+)
+
+mietspiegel_geo$in_problemgebiet <- lengths(trefferliste) > 0
+
+mietspiegel_geo$problemgebiet_flaechen_id <- sapply(
+  trefferliste,
+  function(x) {
+    if (length(x) == 0) {
+      NA_integer_
+    } else {
+      problemgebiete_pasing$flaechen_id[x[1]]
+    }
+  }
+)
+
+cat("Mietspiegel-Punkte in Problemgebieten:",
+    sum(mietspiegel_geo$in_problemgebiet), "\n")
+
+cat("Mietspiegel-Punkte nicht in Problemgebieten:",
+    sum(!mietspiegel_geo$in_problemgebiet), "\n")
+
+
+# ==============================================================================
+# 7. AUF WGS84 FÜR LEAFLET TRANSFORMIEREN
+# ==============================================================================
+
+mietspiegel_geo_wgs <- st_transform(mietspiegel_geo, 4326)
+
+coords_mietspiegel <- st_coordinates(mietspiegel_geo_wgs)
+
+mietspiegel_geo_wgs <- mietspiegel_geo_wgs %>%
+  mutate(
+    s.long = coords_mietspiegel[, 1],
+    s.lat  = coords_mietspiegel[, 2]
+  )
+
+
+# ==============================================================================
+# 8. POPUPS ERSTELLEN
+# ==============================================================================
+
+mietspiegel_geo_wgs <- mietspiegel_geo_wgs %>%
+  mutate(
+    popup_mietspiegel = paste0(
+      "<b>Mietspiegel-Punkt</b><br>",
+      "<hr>",
+      "<b>adressid:</b> ", adressid, "<br>",
+      
+      if ("adresse_1" %in% names(.)) {
+        paste0("<b>Adresse:</b> ", adresse_1, "<br>")
+      } else {
+        ""
+      },
+      
+      if ("adresse_2" %in% names(.)) {
+        paste0("<b>PLZ:</b> ", adresse_2, "<br>")
+      } else {
+        ""
+      },
+      
+      if ("adresse_3" %in% names(.)) {
+        paste0("<b>Ort:</b> ", adresse_3, "<br>")
+      } else {
+        ""
+      },
+      
+      if ("adresse_4" %in% names(.)) {
+        paste0("<b>Stadtbezirk:</b> ", adresse_4, "<br>")
+      } else {
+        ""
+      },
+      
+      "<hr>",
+      "<b>In Problemgebiet:</b> ",
+      ifelse(in_problemgebiet, "Ja", "Nein"),
+      "<br>",
+      "<b>Problemgebiet-Flächen-ID:</b> ",
+      ifelse(
+        is.na(problemgebiet_flaechen_id),
+        "-",
+        problemgebiet_flaechen_id
+      ),
+      "<br>"
+    )
+  )
+
+
+# ==============================================================================
+# 9. IN ZWEI LAYER AUFTEILEN
+# ==============================================================================
+
+mietspiegel_problem <- mietspiegel_geo_wgs %>%
+  filter(in_problemgebiet == TRUE)
+
+mietspiegel_nicht_problem <- mietspiegel_geo_wgs %>%
+  filter(in_problemgebiet == FALSE)
+
+
+# ==============================================================================
+# 10. ZUR BESTEHENDEN KARTE HINZUFÜGEN
+# ==============================================================================
+
+karte_pasing_gesamt <- karte_pasing_gesamt %>%
+  
+  addCircleMarkers(
+    data = mietspiegel_problem,
+    lng = ~s.long,
+    lat = ~s.lat,
+    fillColor = "red",
+    fillOpacity = 1,
+    color = "darkred",
+    stroke = TRUE,
+    weight = 2.5,
+    radius = 8,
+    popup = ~popup_mietspiegel,
+    group = "Mietspiegel: in Problemgebiet"
+  ) %>%
+  
+  addCircleMarkers(
+    data = mietspiegel_nicht_problem,
+    lng = ~s.long,
+    lat = ~s.lat,
+    fillColor = "blue",
+    fillOpacity = 0.85,
+    color = "darkblue",
+    stroke = TRUE,
+    weight = 1.5,
+    radius = 6,
+    popup = ~popup_mietspiegel,
+    group = "Mietspiegel: nicht in Problemgebiet"
+  ) %>%
+  
+  addLayersControl(
+    baseGroups = c("Basiskarte"),
+    overlayGroups = c(
+      "Wohnlagenflächen",
+      "Problemgebiete",
+      "Modellpunkte: unverändert",
+      "Modellpunkte: umklassifiziert",
+      "Lärmpunkte: kNN + Abwertung",
+      "Mietspiegel: in Problemgebiet",
+      "Mietspiegel: nicht in Problemgebiet"
+    ),
+    options = layersControlOptions(collapsed = FALSE)
+  )
+
+
+# ==============================================================================
+# 11. KARTE ERNEUT SPEICHERN
+# ==============================================================================
+
+saveWidget(
+  karte_pasing_gesamt,
+  file = "interaktive_karten/karte_pasing_gesamtanalyse_mit_mietspiegel.html",
+  selfcontained = TRUE
+)
+
+cat("\n✓ Karte mit Mietspiegel-Punkten gespeichert:\n")
+cat("interaktive_karten/karte_pasing_gesamtanalyse_mit_mietspiegel.html\n")
