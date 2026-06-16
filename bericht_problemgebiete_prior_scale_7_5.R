@@ -7,8 +7,10 @@
 # - Leaflet-Kartenausschnitte mit Basiskarte
 # - näher an Problemgebiet herangezoomt
 # - keine Mietspiegel-Punkte
-# - keine Wohnlagen-Legende unten rechts
-# - Hochlärm-Punkte nicht extra markiert
+# - keine Punkt-Legende unten links
+# - Wohnlagen-Legende unten rechts bleibt erhalten
+# - keine Hochlärm-Punkte in Karte oder Tabelle
+# - kein Rang in Überschrift oder Tabelle
 # ==============================================================================
 
 # ==============================================================================
@@ -32,7 +34,7 @@ library(png)
 
 suffix <- "prior_scale_7_5"
 
-buffer_m <- 450
+buffer_m <- 300
 
 out_dir <- "reports/leaflet_ausschnitte"
 pdf_file <- paste0("reports/problemgebiete_report_", suffix, "_leaflet.pdf")
@@ -51,21 +53,6 @@ if (dir.exists(out_dir)) {
 # 2. DATEN LADEN
 # ==============================================================================
 
-load_rds_first_existing <- function(paths) {
-  path <- paths[file.exists(paths)][1]
-  
-  if (is.na(path)) {
-    stop(
-      paste0(
-        "Keine der folgenden Dateien gefunden:\n",
-        paste(paths, collapse = "\n")
-      )
-    )
-  }
-  
-  readRDS(path)
-}
-
 problemgebiete_munich <- readRDS(
   paste0("results_lin_disc/problemgebiete_munich_", suffix, ".rds")
 )
@@ -78,22 +65,6 @@ data_munich_joined <- readRDS(
   paste0("results_lin_disc/data_munich_joined_", suffix, ".rds")
 )
 
-data_munich_laerm_knn <- load_rds_first_existing(
-  c(
-    paste0("results_lin_disc/data_munich_hochlaerm_knn_abgewertet_", suffix, ".rds"),
-    "results_lin_disc/data_munich_hochlaerm_knn_abgewertet.rds"
-  )
-)
-
-if (!inherits(data_munich_laerm_knn, "sf")) {
-  data_munich_laerm_knn <- st_as_sf(
-    data_munich_laerm_knn,
-    coords = c("s.long", "s.lat"),
-    crs = 4326,
-    remove = FALSE
-  )
-}
-
 # ==============================================================================
 # 3. CRS ANGLEICHEN
 # ==============================================================================
@@ -102,7 +73,6 @@ target_crs <- st_crs(problemgebiete_munich)
 
 wohnlagen_munich_analyse <- st_transform(wohnlagen_munich_analyse, target_crs)
 data_munich_joined <- st_transform(data_munich_joined, target_crs)
-data_munich_laerm_knn <- st_transform(data_munich_laerm_knn, target_crs)
 
 # ==============================================================================
 # 4. PROBLEMGEBIETE SORTIEREN
@@ -114,8 +84,7 @@ problemgebiete_sorted <- problemgebiete_munich %>%
     desc(anteil_geaendert),
     desc(n_geaendert),
     desc(n_wohnungen)
-  ) %>%
-  mutate(rang = row_number())
+  )
 
 problem_ids <- problemgebiete_sorted$flaechen_id
 
@@ -170,19 +139,18 @@ dominante_umklassifizierung <- function(df) {
 
 make_leaflet_problemgebiet_png <- function(
     flaechen_id_i,
-    rang_i,
-    buffer_m = 450,
+    buffer_m = 300,
     out_dir = "reports/leaflet_ausschnitte"
 ) {
   
   png_file <- file.path(
     out_dir,
-    paste0("problemgebiet_", rang_i, "_", flaechen_id_i, ".png")
+    paste0("problemgebiet_", flaechen_id_i, ".png")
   )
   
   html_file <- file.path(
     out_dir,
-    paste0("problemgebiet_", rang_i, "_", flaechen_id_i, ".html")
+    paste0("problemgebiet_", flaechen_id_i, ".html")
   )
   
   pg <- problemgebiete_munich %>%
@@ -241,26 +209,26 @@ make_leaflet_problemgebiet_png <- function(
         data = punkte_unchanged_wgs,
         lng = ~s.long,
         lat = ~s.lat,
-        radius = 2.7,
+        radius = 3.2,
         fillColor = ~punktfarbe,
         fillOpacity = 0.35,
         color = "darkgreen",
         opacity = 0.45,
         stroke = TRUE,
-        weight = 0.7
+        weight = 0.8
       ) %>%
       
       addCircleMarkers(
         data = punkte_changed_wgs,
         lng = ~s.long,
         lat = ~s.lat,
-        radius = 4.2,
+        radius = 4.8,
         fillColor = ~punktfarbe,
-        fillOpacity = 0.85,
+        fillOpacity = 0.90,
         color = "red",
         opacity = 1,
         stroke = TRUE,
-        weight = 1.5
+        weight = 1.8
       ) %>%
       
       addPolygons(
@@ -319,11 +287,10 @@ make_leaflet_problemgebiet_png <- function(
 # 7. PNG ALS GGPLOT EINBINDEN
 # ==============================================================================
 
-make_leaflet_plot <- function(flaechen_id_i, rang_i, buffer_m = 450) {
+make_leaflet_plot <- function(flaechen_id_i, buffer_m = 300) {
   
   png_file <- make_leaflet_problemgebiet_png(
     flaechen_id_i = flaechen_id_i,
-    rang_i = rang_i,
     buffer_m = buffer_m,
     out_dir = out_dir
   )
@@ -332,8 +299,11 @@ make_leaflet_plot <- function(flaechen_id_i, rang_i, buffer_m = 450) {
   
   raster <- rasterGrob(
     img,
+    x = 0.5,
+    y = 0.5,
     width = unit(1, "npc"),
-    height = unit(1, "npc"),
+    height = unit(0.82, "npc"),
+    just = "center",
     interpolate = TRUE
   )
   
@@ -346,11 +316,11 @@ make_leaflet_plot <- function(flaechen_id_i, rang_i, buffer_m = 450) {
       ymax = Inf
     ) +
     labs(
-      title = paste0("Rang ", rang_i, " | Problemgebiet ", flaechen_id_i)
+      title = paste0("Problemgebiet ", flaechen_id_i)
     ) +
     theme_void() +
     theme(
-      plot.title = element_text(face = "bold", size = 16, hjust = 0),
+      plot.title = element_text(face = "bold", size = 18, hjust = 0),
       plot.margin = margin(8, 8, 8, 8)
     )
 }
@@ -359,7 +329,7 @@ make_leaflet_plot <- function(flaechen_id_i, rang_i, buffer_m = 450) {
 # 8. TABELLE JE PROBLEMGEBIET
 # ==============================================================================
 
-make_problemgebiet_table <- function(flaechen_id_i, rang_i) {
+make_problemgebiet_table <- function(flaechen_id_i) {
   
   pg <- problemgebiete_munich %>%
     st_drop_geometry() %>%
@@ -370,35 +340,24 @@ make_problemgebiet_table <- function(flaechen_id_i, rang_i) {
   
   dominant_transition <- dominante_umklassifizierung(punkte_pg)
   
-  pg_geom <- problemgebiete_munich %>%
-    filter(flaechen_id == flaechen_id_i)
-  
-  laerm_n <- sum(lengths(st_intersects(data_munich_laerm_knn, pg_geom)) > 0)
-  
   tab_df <- data.frame(
     Kennzahl = c(
-      "Rang",
       "Flächen-ID",
       "Wohnlage der Fläche",
       "Wohnobjekte insgesamt",
       "Geänderte Punkte",
       "Änderungsrate",
-      "Dominante Ausgangslage",
       "Dominante Neulage",
-      "Häufigste Umklassifizierung",
-      "Hochlärm-Punkte"
+      "Häufigste Umklassifizierung"
     ),
     Wert = c(
-      rang_i,
       pg$flaechen_id,
       clean_wohnlage(pg$Wohnlage),
       pg$n_wohnungen,
       pg$n_geaendert,
       paste0(round(pg$anteil_geaendert * 100, 1), " %"),
-      pg$alte_lage_haeufig,
       pg$neue_lage_haeufig,
-      dominant_transition,
-      laerm_n
+      dominant_transition
     ),
     stringsAsFactors = FALSE
   )
@@ -419,50 +378,46 @@ pdf(
   height = 7.5
 )
 
-for (i in seq_along(problem_ids)) {
+for (fid in problem_ids) {
   
-  fid <- problem_ids[i]
-  
-  cat("Erzeuge Seite", i, "für Problemgebiet", fid, "\n")
+  cat("Erzeuge Seite für Problemgebiet", fid, "\n")
   
   map_plot <- make_leaflet_plot(
     flaechen_id_i = fid,
-    rang_i = i,
     buffer_m = buffer_m
   )
   
   tab_df <- make_problemgebiet_table(
-    flaechen_id_i = fid,
-    rang_i = i
+    flaechen_id_i = fid
   )
   
   table_grob <- tableGrob(
     tab_df,
     rows = NULL,
     theme = ttheme_minimal(
-      base_size = 9,
+      base_size = 11,
       core = list(
         fg_params = list(
           hjust = 0,
           x = 0.02,
-          fontsize = 9
+          fontsize = 11
         )
       ),
       colhead = list(
         fg_params = list(
           fontface = "bold",
-          fontsize = 10
+          fontsize = 12
         )
       )
     )
   )
   
-  table_grob$widths <- unit(c(0.45, 0.55), "npc")
+  table_grob$widths <- unit(c(0.48, 0.52), "npc")
   
   table_panel <- wrap_elements(table_grob)
   
   page <- map_plot + table_panel +
-    plot_layout(widths = c(1.9, 1))
+    plot_layout(widths = c(2.15, 1))
   
   print(page)
 }
@@ -473,7 +428,6 @@ cat("\nPDF gespeichert unter:\n")
 cat(pdf_file, "\n")
 cat("\nErzeugte Kartenausschnitte:\n")
 print(list.files(out_dir, pattern = "\\.png$", full.names = TRUE))
-
 
 
 
