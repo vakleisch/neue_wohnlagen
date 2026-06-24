@@ -219,6 +219,9 @@ model_data_hoherlärm <- model_munich_data2 %>%
 model_munich_data2 <- model_munich_data2 %>%
   filter(laerm < 4)
 
+saveRDS(model_munich_data2, "daten/model_munich_data2.rds")
+saveRDS(model_data_hoherlärm, "daten/model_data_hoherlärm.rds")
+
 # Nur Pasing aus data filtern (LDA)
 data_pasing <- data %>%
   filter(grepl("Pasing", gemarkung_, ignore.case = TRUE))

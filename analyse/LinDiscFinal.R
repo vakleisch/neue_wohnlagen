@@ -11,7 +11,7 @@
 # 6. Prior-Transformation mit priorscale_7_5
 # 7. Wohnlagenflächenanalyse und Problemgebiete
 # 8. Validierung: Delta vs. Prior Scale
-# 9. kNN-Zuordnung der Hochlärm-Punkte + Abwertung
+# 9. Direkte Abwertung der Hochlärm-Punkte
 # 10. Mietspiegelpunkte gegen Problemgebiete prüfen
 # 11. Interaktive Gesamtkarte München erstellen
 #
@@ -28,10 +28,7 @@ library(mgcv)
 library(leaflet)
 library(htmlwidgets)
 
-if (!requireNamespace("FNN", quietly = TRUE)) {
-  install.packages("FNN")
-}
-library(FNN)
+
 
 source("daten_verarbeitung/daten_bearbeitung.R")
 
@@ -43,18 +40,17 @@ source("daten_verarbeitung/daten_bearbeitung.R")
 prior_scale <- 7.5
 suffix <- "prior_scale_7_5"
 
-k_neighbors <- 10
+
 
 # Problemgebiet-Regel
-min_wohnungen_problemgebiet <- 20
-min_anteil_geaendert_problemgebiet <- 0.20
+min_wohnungen_problemgebiet <- 5
+min_anteil_geaendert_problemgebiet <- 0.25
 
 cat("====================================\n")
 cat("EINSTELLUNGEN\n")
 cat("====================================\n")
 
 cat("Entsprechender prior.scale:", round(prior_scale, 4), "\n")
-cat("k für kNN:", k_neighbors, "\n")
 cat("Problemgebiet: mindestens",
     min_wohnungen_problemgebiet,
     "Wohnungen und mindestens",
@@ -772,34 +768,14 @@ saveRDS(
   "results_lin_disc/vergleich_delta_vs_prior_equivalent_munich.rds"
 )
 
-
 # ==============================================================================
-# 19. KNN-ZUORDNUNG DER HOCHLÄRM-PUNKTE
+# 19. DIREKTE ABWERTUNG DER HOCHLÄRM-PUNKTE
 # ==============================================================================
-
-required_reference_vars <- c(
-  "s.long",
-  "s.lat",
-  "wohnlage_neu"
-)
-
-missing_reference_vars <- setdiff(
-  required_reference_vars,
-  names(data_munich)
-)
-
-if (length(missing_reference_vars) > 0) {
-  stop(
-    paste(
-      "In data_munich fehlen:",
-      paste(missing_reference_vars, collapse = ", ")
-    )
-  )
-}
 
 required_laerm_vars <- c(
   "s.long",
-  "s.lat"
+  "s.lat",
+  "wohnlage_ebene"
 )
 
 missing_laerm_vars <- setdiff(
@@ -816,100 +792,17 @@ if (length(missing_laerm_vars) > 0) {
   )
 }
 
-reference_sf <- st_as_sf(
-  data_munich,
-  coords = c("s.long", "s.lat"),
-  crs = 4326,
-  remove = FALSE
-)
-
-laerm_sf <- st_as_sf(
-  data_munich_laerm,
-  coords = c("s.long", "s.lat"),
-  crs = 4326,
-  remove = FALSE
-)
-
-reference_sf_utm <- st_transform(reference_sf, 25832)
-laerm_sf_utm <- st_transform(laerm_sf, 25832)
-
-reference_coords <- st_coordinates(reference_sf_utm)
-laerm_coords <- st_coordinates(laerm_sf_utm)
-
-knn_file <- paste0(
-  "results_lin_disc/knn_munich_hochlaerm_k",
-  k_neighbors,
-  ".rds"
-)
-
-if (file.exists(knn_file)) {
+# Falls noch nicht vorhanden: alte 3-Kategorien-Wohnlage ableiten
+if (!"wohnlage_alt_3cat" %in% names(data_munich_laerm)) {
   
-  cat("\nVorhandenes kNN-Ergebnis wird geladen:\n")
-  cat(knn_file, "\n")
-  
-  knn_res <- readRDS(knn_file)
-  
-} else {
-  
-  cat("\nBerechne kNN für Hochlärm-Punkte...\n")
-  
-  knn_res <- FNN::get.knnx(
-    data = reference_coords,
-    query = laerm_coords,
-    k = k_neighbors,
-    algorithm = "kd_tree"
-  )
-  
-  saveRDS(
-    knn_res,
-    knn_file
-  )
+  data_munich_laerm$wohnlage_alt_3cat <-
+    derive_wohnlage_3cat(data_munich_laerm$wohnlage_ebene)
 }
-
-neighbor_index_matrix <- knn_res$nn.index
-neighbor_distance_matrix <- knn_res$nn.dist
-
 
 wohnlage_order <- c(
   "durchschnittliche Lage",
   "gute Lage",
   "beste Lage"
-)
-
-majority_vote_conservative <- function(classes) {
-  
-  tab <- table(factor(classes, levels = wohnlage_order))
-  
-  max_count <- max(tab)
-  winner_classes <- names(tab)[tab == max_count]
-  
-  winner_idx <- match(winner_classes, wohnlage_order)
-  
-  winner <- wohnlage_order[min(winner_idx)]
-  
-  return(winner)
-}
-
-wohnlage_knn_basis <- apply(
-  neighbor_index_matrix,
-  1,
-  function(idx) {
-    neighbor_classes <- data_munich$wohnlage_neu[idx]
-    majority_vote_conservative(neighbor_classes)
-  }
-)
-
-knn_vote_share <- apply(
-  neighbor_index_matrix,
-  1,
-  function(idx) {
-    
-    neighbor_classes <- data_munich$wohnlage_neu[idx]
-    
-    tab <- table(factor(neighbor_classes, levels = wohnlage_order))
-    
-    max(tab) / sum(tab)
-  }
 )
 
 downgrade_one_level <- function(x) {
@@ -922,55 +815,51 @@ downgrade_one_level <- function(x) {
   )
 }
 
-wohnlage_nach_laerm <- downgrade_one_level(
-  wohnlage_knn_basis
-)
-
-data_munich_laerm_knn <- data_munich_laerm %>%
+data_munich_laerm_direkt <- data_munich_laerm %>%
   mutate(
-    knn_k = k_neighbors,
+    wohnlage_alt_3cat = factor(
+      wohnlage_alt_3cat,
+      levels = wohnlage_order
+    ),
     
-    wohnlage_knn_basis = wohnlage_knn_basis,
-    wohnlage_nach_laerm = wohnlage_nach_laerm,
+    wohnlage_nach_laerm = downgrade_one_level(
+      as.character(wohnlage_alt_3cat)
+    ),
     
-    knn_vote_share = knn_vote_share,
-    
-    distanz_naechster_nachbar_m =
-      neighbor_distance_matrix[, 1],
-    
-    distanz_mittlere_k_nachbarn_m =
-      rowMeans(neighbor_distance_matrix),
+    wohnlage_nach_laerm = factor(
+      wohnlage_nach_laerm,
+      levels = wohnlage_order
+    ),
     
     abgewertet_durch_laerm =
-      wohnlage_knn_basis != wohnlage_nach_laerm
+      as.character(wohnlage_alt_3cat) != as.character(wohnlage_nach_laerm),
+    
+    methode_hochlaerm = "direkte Abwertung ohne kNN"
   )
 
 cat("\n====================================\n")
-cat("KNN-HOCHLÄRM-AUSWERTUNG GANZ MÜNCHEN\n")
+cat("HOCHLÄRM-AUSWERTUNG: DIREKTE ABWERTUNG\n")
 cat("====================================\n")
+
 cat("Anzahl Hochlärm-Punkte:",
-    nrow(data_munich_laerm_knn), "\n")
+    nrow(data_munich_laerm_direkt), "\n")
 
-cat("\nWohnlage aus kNN-Votum:\n")
-print(table(data_munich_laerm_knn$wohnlage_knn_basis, useNA = "ifany"))
+cat("\nAlte Wohnlage der Hochlärm-Punkte:\n")
+print(table(data_munich_laerm_direkt$wohnlage_alt_3cat, useNA = "ifany"))
 
-cat("\nWohnlage nach Lärm-Abwertung:\n")
-print(table(data_munich_laerm_knn$wohnlage_nach_laerm, useNA = "ifany"))
+cat("\nWohnlage nach direkter Lärm-Abwertung:\n")
+print(table(data_munich_laerm_direkt$wohnlage_nach_laerm, useNA = "ifany"))
 
-cat("\nAnteil tatsächlich abgewertet:",
-    round(mean(data_munich_laerm_knn$abgewertet_durch_laerm) * 100, 2),
+cat("\nAnteil abgewertet:",
+    round(mean(data_munich_laerm_direkt$abgewertet_durch_laerm, na.rm = TRUE) * 100, 2),
     "%\n")
-
-cat("\nEindeutigkeit des kNN-Votums:\n")
-print(summary(data_munich_laerm_knn$knn_vote_share))
 
 cat("====================================\n")
 
 saveRDS(
-  data_munich_laerm_knn,
-  "results_lin_disc/data_munich_hochlaerm_knn_abgewertet.rds"
+  data_munich_laerm_direkt,
+  "results_lin_disc/data_munich_hochlaerm_direkt_abgewertet.rds"
 )
-
 
 # ==============================================================================
 # 20. MIETSPIEGELDATENSATZ LADEN UND GEGEN PROBLEMGEBIETE PRÜFEN
@@ -1077,11 +966,11 @@ data_munich_joined_wgs <- st_transform(data_munich_joined, 4326)
 wohnlagen_munich_analyse_wgs <- st_transform(wohnlagen_munich_analyse, 4326)
 problemgebiete_munich_wgs <- st_transform(problemgebiete_munich, 4326)
 
-if (inherits(data_munich_laerm_knn, "sf")) {
-  data_munich_laerm_knn_wgs <- st_transform(data_munich_laerm_knn, 4326)
+if (inherits(data_munich_laerm_direkt, "sf")) {
+  data_munich_laerm_direkt_wgs <- st_transform(data_munich_laerm_direkt, 4326)
 } else {
-  data_munich_laerm_knn_wgs <- st_as_sf(
-    data_munich_laerm_knn,
+  data_munich_laerm_direkt_wgs <- st_as_sf(
+    data_munich_laerm_direkt,
     coords = c("s.long", "s.lat"),
     crs = 4326,
     remove = FALSE
@@ -1111,10 +1000,10 @@ modellpunkte_unchanged <- data_munich_joined_wgs %>%
     punktfarbe = unname(wohnlage_farben_3[wohnlage_neu])
   )
 
-data_munich_laerm_knn_wgs <- data_munich_laerm_knn_wgs %>%
+data_munich_laerm_direkt_wgs <- data_munich_laerm_direkt_wgs %>%
   mutate(
     punktfarbe_laerm =
-      unname(wohnlage_farben_3[wohnlage_nach_laerm])
+      unname(wohnlage_farben_3[as.character(wohnlage_nach_laerm)])
   )
 
 mietspiegel_geo_wgs <- st_transform(mietspiegel_geo, 4326)
@@ -1198,46 +1087,25 @@ popup_laermpunkte <- function(df) {
   paste0(
     "<b>Hochlärm-Punkt</b><br>",
     "<hr>",
-    if ("wohnlage_alt_3cat" %in% names(df)) {
-      paste0(
-        "<b>Alte Wohnlage:</b> ",
-        df$wohnlage_alt_3cat,
-        "<br>"
-      )
-    } else {
-      ""
-    },
+    "<b>Alte Wohnlage:</b> ",
+    df$wohnlage_alt_3cat,
+    "<br>",
     "<b>Lärmwert:</b> ",
     ifelse(is.na(df$laerm), "n. v.", df$laerm),
     "<br>",
-    "<b>kNN-Basiswohnlage:</b> ",
-    df$wohnlage_knn_basis,
-    "<br>",
-    "<b>Finale Wohnlage nach Lärm-Abwertung:</b> ",
+    "<b>Finale Wohnlage nach direkter Lärm-Abwertung:</b> ",
     "<span style='color:red; font-weight:bold;'>",
     df$wohnlage_nach_laerm,
     "</span><br>",
     "<b>Abgewertet durch Lärm:</b> ",
     ifelse(df$abgewertet_durch_laerm, "Ja", "Nein"),
     "<br>",
-    "<hr>",
-    "<b>k:</b> ",
-    df$knn_k,
-    "<br>",
-    "<b>Mehrheitsanteil kNN:</b> ",
-    round(df$knn_vote_share * 100, 1),
-    " %<br>",
-    "<b>Distanz nächster Nachbar:</b> ",
-    round(df$distanz_naechster_nachbar_m, 1),
-    " m<br>",
-    "<b>Mittlere Distanz der k Nachbarn:</b> ",
-    round(df$distanz_mittlere_k_nachbarn_m, 1),
-    " m<br>"
+    "<b>Methode:</b> direkte Abwertung ohne kNN<br>"
   )
 }
 
-data_munich_laerm_knn_wgs$popup_text <-
-  popup_laermpunkte(data_munich_laerm_knn_wgs)
+data_munich_laerm_direkt_wgs$popup_text <-
+  popup_laermpunkte(data_munich_laerm_direkt_wgs)
 
 
 # ==============================================================================
@@ -1455,17 +1323,17 @@ karte_munich_gesamt <- leaflet(
   ) %>%
   
   addCircleMarkers(
-    data = data_munich_laerm_knn_wgs,
+    data = data_munich_laerm_direkt_wgs,
     lng = ~s.long,
     lat = ~s.lat,
     fillColor = ~punktfarbe_laerm,
     fillOpacity = 1,
-    color = "#6a0000",
+    color = "violet",
     stroke = TRUE,
     weight = 2.3,
     radius = 6,
     popup = ~popup_text,
-    group = "Hochlärm-Punkte: kNN + Abwertung"
+    group = "Hochlärm-Punkte: direkte Abwertung"
   ) %>%
   
   addCircleMarkers(
@@ -1511,7 +1379,7 @@ karte_munich_gesamt <- leaflet(
       "Problemgebiete",
       "Modellpunkte: unverändert",
       "Modellpunkte: umklassifiziert",
-      "Hochlärm-Punkte: kNN + Abwertung",
+      "Hochlärm-Punkte: direkte Abwertung",
       "Mietspiegel: in Problemgebiet",
       "Mietspiegel: nicht in Problemgebiet"
     ),
@@ -1561,7 +1429,7 @@ cat("Problemgebiete:",
     nrow(problemgebiete_munich_wgs), "\n")
 
 cat("Hochlärm-Punkte:",
-    nrow(data_munich_laerm_knn_wgs), "\n")
+    nrow(data_munich_laerm_direkt_wgs), "\n")
 
 cat("Mietspiegel-Punkte gesamt:",
     nrow(mietspiegel_geo_wgs), "\n")
@@ -1630,8 +1498,8 @@ cat("Anzahl Flächen:", length(unique(data_area$flaechen_id)), "\n")
 # 2. Problemgebiet-Definition
 # --------------------------------------------------------------------------
 
-min_wohnungen_problemgebiet <- 20
-min_anteil_geaendert_problemgebiet <- 0.20
+min_wohnungen_problemgebiet <- 5
+min_anteil_geaendert_problemgebiet <- 0.25
 
 
 # --------------------------------------------------------------------------
@@ -1868,3 +1736,7 @@ ggsave(
 cat("\nGespeichert:\n")
 cat("results_lin_disc/elbow_prior_scale_problemgebiete.csv\n")
 cat("results_lin_disc/elbow_prior_scale_problemgebiete.png\n")
+
+
+
+

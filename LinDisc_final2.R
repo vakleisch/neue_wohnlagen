@@ -1561,6 +1561,8 @@ saveRDS(
 
 # ==============================================================================
 # 27. INTERAKTIVE GESAMTKARTE GANZ MÜNCHEN
+#    OHNE MIETSPIEGEL
+#    MIT DEUTLICH REDUZIERTEN POPUPS
 # ==============================================================================
 
 wohnlage_farben_3 <- c(
@@ -1609,117 +1611,301 @@ data_munich_laerm_direkt_wgs <- data_munich_laerm_direkt_wgs %>%
       unname(wohnlage_farben_3[as.character(wohnlage_nach_laerm)])
   )
 
-mietspiegel_geo_wgs <- st_transform(mietspiegel_geo, 4326)
 
-coords_mietspiegel <- st_coordinates(mietspiegel_geo_wgs)
+# ==============================================================================
+# 27. INTERAKTIVE GESAMTKARTE GANZ MÜNCHEN
+#    OHNE MIETSPIEGEL
+#    MIT STARKEN UND SCHWACHEN PROBLEMGEBIETEN
+# ==============================================================================
 
-mietspiegel_geo_wgs <- mietspiegel_geo_wgs %>%
+wohnlage_farben_3 <- c(
+  "durchschnittliche Lage" = "#e8f5a4",
+  "gute Lage"              = "#afe391",
+  "beste Lage"             = "#7FCDBB"
+)
+
+clean_wohnlage <- function(x) {
+  trimws(gsub("zentrale", "", as.character(x), ignore.case = TRUE))
+}
+
+# ==============================================================================
+# 27A. STARKE PROBLEMGEBIETE BESTIMMEN
+#     Stark = Gebiet ist auch bei prior_scale = 35 noch auffällig
+# ==============================================================================
+
+prior_scale_stark <- 35
+
+SCORE_munich <- readRDS("results_lin_disc/SCORE_munich_mit_laerm.rds")
+
+data_eval_75 <- data_munich_joined %>%
+  st_drop_geometry()
+
+stopifnot(nrow(SCORE_munich) == nrow(data_eval_75))
+
+if (!is.null(colnames(SCORE_munich))) {
+  levels_c <- colnames(SCORE_munich)
+} else {
+  levels_c <- levels(data_eval_75$c)
+}
+
+data_eval_75$c <- factor(
+  as.character(data_eval_75$c),
+  levels = levels_c
+)
+
+idx_area <- !is.na(data_eval_75$flaechen_id)
+
+SCORE_area <- SCORE_munich[idx_area, , drop = FALSE]
+
+data_area <- data_eval_75[idx_area, ]
+
+data_laerm_area <- data_munich_laerm_joined %>%
+  filter(!is.na(flaechen_id)) %>%
+  st_drop_geometry()
+
+count_problemgebiete_for_prior_map <- function(
+    SCORE,
+    data,
+    data_laerm,
+    levels_c,
+    prior_scale
+) {
+  
+  N <- nrow(data)
+  k <- length(levels_c)
+  
+  SCORE_shifted <- SCORE - apply(SCORE, 1, min)
+  
+  PRIOR <- matrix(
+    1,
+    nrow = N,
+    ncol = k
+  )
+  
+  colnames(PRIOR) <- levels_c
+  
+  for (j in seq_len(k)) {
+    PRIOR[, j] <- 1 + prior_scale *
+      (as.character(data$c) == levels_c[j])
+  }
+  
+  PROB_prior <- exp(-SCORE_shifted) * PRIOR
+  PROB_prior <- PROB_prior / rowSums(PROB_prior)
+  
+  colnames(PROB_prior) <- levels_c
+  
+  pred <- levels_c[max.col(PROB_prior)]
+  
+  data_model_eval <- data %>%
+    mutate(
+      wohnlage_alt = as.character(c),
+      wohnlage_neu = pred,
+      changed = wohnlage_alt != wohnlage_neu,
+      punkt_typ = "modellpunkt"
+    )
+  
+  data_laerm_eval <- data_laerm %>%
+    mutate(
+      punkt_typ = "hochlaerm_direkt_abgewertet"
+    )
+  
+  eval_all <- bind_rows(
+    data_model_eval %>%
+      select(flaechen_id, changed, punkt_typ),
+    data_laerm_eval %>%
+      select(flaechen_id, changed, punkt_typ)
+  )
+  
+  gebiet_summary <- eval_all %>%
+    group_by(flaechen_id) %>%
+    summarise(
+      n_wohnungen = n(),
+      n_geaendert = sum(changed, na.rm = TRUE),
+      anteil_geaendert = n_geaendert / n_wohnungen,
+      anteil_geaendert_prozent = round(anteil_geaendert * 100, 2),
+      .groups = "drop"
+    )
+  
+  problemgebiete <- gebiet_summary %>%
+    filter(
+      n_wohnungen >= min_wohnungen_problemgebiet,
+      anteil_geaendert >= min_anteil_geaendert_problemgebiet
+    )
+  
+  problemgebiete
+}
+
+problemgebiete_prior35_summary <- count_problemgebiete_for_prior_map(
+  SCORE = SCORE_area,
+  data = data_area,
+  data_laerm = data_laerm_area,
+  levels_c = levels_c,
+  prior_scale = prior_scale_stark
+)
+
+starke_problemgebiet_ids <- problemgebiete_prior35_summary$flaechen_id
+
+problemgebiete_munich <- problemgebiete_munich %>%
   mutate(
-    s.long = coords_mietspiegel[, 1],
-    s.lat = coords_mietspiegel[, 2]
+    problemgebiet_staerke = ifelse(
+      flaechen_id %in% starke_problemgebiet_ids,
+      "stark",
+      "schwach"
+    )
   )
 
-mietspiegel_problem <- mietspiegel_geo_wgs %>%
-  filter(in_problemgebiet == TRUE)
+problemgebiete_stark <- problemgebiete_munich %>%
+  filter(problemgebiet_staerke == "stark")
 
-mietspiegel_nicht_problem <- mietspiegel_geo_wgs %>%
-  filter(in_problemgebiet == FALSE)
+problemgebiete_schwach <- problemgebiete_munich %>%
+  filter(problemgebiet_staerke == "schwach")
+
+cat("\n====================================\n")
+cat("PROBLEMGEBIETE NACH STÄRKE\n")
+cat("====================================\n")
+cat("Problemgebiete insgesamt:", nrow(problemgebiete_munich), "\n")
+cat("Starke Problemgebiete, auch bei prior_scale = 35 auffällig:",
+    nrow(problemgebiete_stark), "\n")
+cat("Schwache Problemgebiete, nur bei prior_scale = 7.5 auffällig:",
+    nrow(problemgebiete_schwach), "\n")
+cat("====================================\n")
+
+saveRDS(
+  problemgebiete_munich,
+  paste0("results_lin_disc/problemgebiete_munich_mit_staerke_", suffix, ".rds")
+)
 
 
 # ==============================================================================
-# 27A. POPUPS MODELLPUNKTE
+# 27B. DATEN NACH WGS84 TRANSFORMIEREN
 # ==============================================================================
 
-popup_modellpunkte <- function(df) {
+data_munich_joined_wgs <- st_transform(data_munich_joined, 4326)
+data_munich_laerm_direkt_wgs <- st_transform(data_munich_laerm_joined, 4326)
+data_munich_all_in_area_wgs <- st_transform(data_munich_all_in_area, 4326)
+
+wohnlagen_munich_analyse_wgs <- st_transform(wohnlagen_munich_analyse, 4326)
+problemgebiete_stark_wgs <- st_transform(problemgebiete_stark, 4326)
+problemgebiete_schwach_wgs <- st_transform(problemgebiete_schwach, 4326)
+
+wohnlagen_munich_analyse_wgs <- wohnlagen_munich_analyse_wgs %>%
+  mutate(
+    Wohnlage_3cat = clean_wohnlage(Wohnlage),
+    flaechenfarbe = unname(wohnlage_farben_3[Wohnlage_3cat])
+  )
+
+problemgebiete_stark_wgs <- problemgebiete_stark_wgs %>%
+  mutate(
+    Wohnlage_3cat = clean_wohnlage(Wohnlage)
+  )
+
+problemgebiete_schwach_wgs <- problemgebiete_schwach_wgs %>%
+  mutate(
+    Wohnlage_3cat = clean_wohnlage(Wohnlage)
+  )
+
+
+# ==============================================================================
+# 27C. MODELLPUNKTE
+# ==============================================================================
+
+modellpunkte_changed <- data_munich_joined_wgs %>%
+  filter(changed == TRUE) %>%
+  mutate(
+    wohnlage_neu_3cat = clean_wohnlage(wohnlage_neu),
+    punktfarbe = unname(wohnlage_farben_3[wohnlage_neu_3cat])
+  )
+
+modellpunkte_unchanged <- data_munich_joined_wgs %>%
+  filter(changed == FALSE) %>%
+  mutate(
+    wohnlage_neu_3cat = clean_wohnlage(wohnlage_neu),
+    punktfarbe = unname(wohnlage_farben_3[wohnlage_neu_3cat])
+  )
+
+
+# ==============================================================================
+# 27D. HOCHLÄRM-PUNKTE
+#     Wichtig: as.character(), damit im Popup nicht 1/2/3 erscheint
+# ==============================================================================
+
+if ("wohnlage_neu" %in% names(data_munich_laerm_direkt_wgs)) {
+  data_munich_laerm_direkt_wgs$neue_lage_laerm <-
+    clean_wohnlage(as.character(data_munich_laerm_direkt_wgs$wohnlage_neu))
+} else {
+  data_munich_laerm_direkt_wgs$neue_lage_laerm <-
+    clean_wohnlage(as.character(data_munich_laerm_direkt_wgs$wohnlage_nach_laerm))
+}
+
+if ("wohnlage_alt_3cat" %in% names(data_munich_laerm_direkt_wgs)) {
+  data_munich_laerm_direkt_wgs$alte_lage_laerm <-
+    clean_wohnlage(as.character(data_munich_laerm_direkt_wgs$wohnlage_alt_3cat))
+} else {
+  data_munich_laerm_direkt_wgs$alte_lage_laerm <-
+    clean_wohnlage(as.character(data_munich_laerm_direkt_wgs$wohnlage_alt))
+}
+
+data_munich_laerm_direkt_wgs <- data_munich_laerm_direkt_wgs %>%
+  mutate(
+    punktfarbe_laerm =
+      unname(wohnlage_farben_3[neue_lage_laerm])
+  )
+
+
+# ==============================================================================
+# 27E. POPUPS MODELLPUNKTE
+#     Nur für umklassifizierte Modellpunkte.
+#     Korrekte/unveränderte Modellpunkte bekommen KEIN Popup.
+# ==============================================================================
+
+popup_modellpunkte_changed <- function(df) {
   paste0(
-    "<b>Modellierter München-Punkt</b><br>",
+    "<b>Umklassifizierter Modellpunkt</b><br>",
     "<hr>",
     "<b>Alte Wohnlage:</b> ", df$wohnlage_alt, "<br>",
     "<b>Neue Wohnlage:</b> ",
-    ifelse(
-      df$changed,
-      paste0(
-        "<span style='color:red; font-weight:bold;'>",
-        df$wohnlage_neu,
-        "</span>"
-      ),
-      df$wohnlage_neu
-    ),
-    "<br>",
-    "<b>Umklassifiziert:</b> ",
-    ifelse(df$changed, "Ja", "Nein"),
-    "<br>",
-    "<b>Lärmwert:</b> ",
-    ifelse(is.na(df$laerm), "n. v.", df$laerm),
-    "<br>",
-    "<b>Punkttyp:</b> Modellpunkt<br>",
-    "<hr>",
-    "<b>Score alt:</b> ",
-    round(df$score_alt, 3),
-    "<br>",
-    "<b>Score neu:</b> ",
-    round(df$score_neu, 3),
-    "<br>",
-    "<b>Realisierte Verbesserung:</b> ",
-    round(df$realized_improvement, 3),
-    "<br>",
-    "<b>Potenzielle Verbesserung:</b> ",
-    round(df$potential_improvement, 3),
-    "<br>",
-    "<b>Max. Prior-Wahrscheinlichkeit:</b> ",
-    round(df$prob_max * 100, 1),
-    " %<br>",
-    "<hr>",
-    "<b>Flächen-ID:</b> ",
-    ifelse(is.na(df$flaechen_id), "keine Zuordnung", df$flaechen_id),
-    "<br>",
-    "<b>Getroffene Flächen:</b> ",
-    df$n_getroffene_flaechen,
-    "<br>",
-    "<b>Mehrfachtreffer kleinste Fläche:</b> ",
-    ifelse(df$mehrfachtreffer_kleinste_flaeche, "Ja", "Nein"),
-    "<br>"
+    "<span style='color:red; font-weight:bold;'>",
+    df$wohnlage_neu,
+    "</span><br>"
   )
 }
 
 modellpunkte_changed$popup_text <-
-  popup_modellpunkte(modellpunkte_changed)
-
-modellpunkte_unchanged$popup_text <-
-  popup_modellpunkte(modellpunkte_unchanged)
+  popup_modellpunkte_changed(modellpunkte_changed)
 
 
 # ==============================================================================
-# 27B. POPUPS HOCHLÄRM-PUNKTE
+# 27F. POPUPS HOCHLÄRM-PUNKTE
 # ==============================================================================
 
 popup_laermpunkte <- function(df) {
+  
+  neue_lage <- as.character(df$neue_lage_laerm)
+  alte_lage <- as.character(df$alte_lage_laerm)
+  
+  abgewertet <- if ("abgewertet_durch_laerm" %in% names(df)) {
+    df$abgewertet_durch_laerm
+  } else {
+    df$changed
+  }
+  
   paste0(
     "<b>Hochlärm-Punkt</b><br>",
     "<hr>",
-    "<b>Alte Wohnlage:</b> ",
-    df$wohnlage_alt_3cat,
+    "<b>Alte Wohnlage:</b> ", alte_lage, "<br>",
+    "<b>Neue Wohnlage:</b> ",
+    ifelse(
+      abgewertet,
+      paste0(
+        "<span style='color:red; font-weight:bold;'>",
+        neue_lage,
+        "</span>"
+      ),
+      neue_lage
+    ),
     "<br>",
-    "<b>Lärmwert:</b> ",
-    ifelse(is.na(df$laerm), "n. v.", df$laerm),
-    "<br>",
-    "<b>Finale Wohnlage nach direkter Lärm-Abwertung:</b> ",
-    "<span style='color:red; font-weight:bold;'>",
-    df$wohnlage_nach_laerm,
-    "</span><br>",
-    "<b>Abgewertet durch Lärm:</b> ",
-    ifelse(df$abgewertet_durch_laerm, "Ja", "Nein"),
-    "<br>",
-    "<b>Methode:</b> direkte Abwertung ohne kNN<br>",
-    "<hr>",
-    "<b>Flächen-ID:</b> ",
-    ifelse(is.na(df$flaechen_id), "keine Zuordnung", df$flaechen_id),
-    "<br>",
-    "<b>Getroffene Flächen:</b> ",
-    df$n_getroffene_flaechen,
-    "<br>",
-    "<b>Mehrfachtreffer kleinste Fläche:</b> ",
-    ifelse(df$mehrfachtreffer_kleinste_flaeche, "Ja", "Nein"),
+    "<b>Abgewertet:</b> ",
+    ifelse(abgewertet, "Ja", "Nein"),
     "<br>"
   )
 }
@@ -1729,174 +1915,59 @@ data_munich_laerm_direkt_wgs$popup_text <-
 
 
 # ==============================================================================
-# 27C. POPUPS FLÄCHEN
+# 27G. POPUPS FLÄCHEN
+#     Keine Flächen-ID, keine technischen Scores, keine nahe-Punkte-Zusatzanalyse.
 # ==============================================================================
 
 wohnlagen_munich_analyse_wgs <- wohnlagen_munich_analyse_wgs %>%
   mutate(
     popup_flaeche = paste0(
-      "<b>Wohnlagenfläche München</b><br>",
+      "<b>Wohnlagenfläche</b><br>",
       "<hr>",
-      "<b>Flächen-ID:</b> ", flaechen_id, "<br>",
       "<b>Wohnlage:</b> ", Wohnlage_3cat, "<br>",
-      "<hr>",
-      "<b>Anzahl Punkte insgesamt:</b> ",
-      n_wohnungen,
-      "<br>",
-      "<b>Normale Modellpunkte:</b> ",
-      n_modellpunkte,
-      "<br>",
-      "<b>Hochlärm-Punkte:</b> ",
-      n_hochlaerm_punkte,
-      "<br>",
-      "<hr>",
-      "<b>Anzahl geändert insgesamt:</b> ",
-      n_geaendert,
-      "<br>",
-      "<b>Geänderte Modellpunkte:</b> ",
-      n_geaendert_modellpunkte,
-      "<br>",
-      "<b>Geänderte Hochlärm-Punkte:</b> ",
-      n_geaendert_hochlaerm,
-      "<br>",
+      "<b>Punkte insgesamt:</b> ", n_wohnungen, "<br>",
+      "<b>Geänderte Punkte:</b> ", n_geaendert, "<br>",
       "<b>Anteil geändert:</b> ",
       round(anteil_geaendert_prozent, 2),
-      " %<br>",
-      "<hr>",
-      "<b>Punkte ohne Fläche nahe dieser Fläche:</b> ",
-      n_ohne_flaeche_nahe,
-      "<br>",
-      "<b>Davon geändert:</b> ",
-      n_geaendert_ohne_flaeche_nahe,
-      "<br>",
-      "<hr>",
-      "<b>Mittlere realisierte Verbesserung:</b> ",
-      round(mittlere_realisierte_verbesserung, 3),
-      "<br>",
-      "<b>Mittlere potenzielle Verbesserung:</b> ",
-      round(mittlere_potenzielle_verbesserung, 3),
-      "<br>",
-      "<b>Mittlere max. Wahrscheinlichkeit:</b> ",
-      round(mittlere_max_prob * 100, 1),
-      " %<br>",
-      "<hr>",
-      "<b>Häufigste alte Lage:</b> ",
-      alte_lage_haeufig,
-      "<br>",
-      "<b>Häufigste neue Lage:</b> ",
-      neue_lage_haeufig,
-      "<br>"
+      " %<br>"
     )
   )
 
-problemgebiete_munich_wgs <- problemgebiete_munich_wgs %>%
+problemgebiete_stark_wgs <- problemgebiete_stark_wgs %>%
   mutate(
     popup_problemgebiet = paste0(
-      "<b>Potenzielles Problemgebiet</b><br>",
+      "<b>Starkes Problemgebiet</b><br>",
       "<hr>",
-      "<b>Flächen-ID:</b> ",
-      flaechen_id,
-      "<br>",
-      "<b>Wohnlage:</b> ",
-      Wohnlage_3cat,
-      "<br>",
-      "<hr>",
-      "<b>Anzahl Punkte insgesamt:</b> ",
-      n_wohnungen,
-      "<br>",
-      "<b>Normale Modellpunkte:</b> ",
-      n_modellpunkte,
-      "<br>",
-      "<b>Hochlärm-Punkte:</b> ",
-      n_hochlaerm_punkte,
-      "<br>",
-      "<hr>",
-      "<b>Anzahl geändert insgesamt:</b> ",
-      n_geaendert,
-      "<br>",
-      "<b>Geänderte Modellpunkte:</b> ",
-      n_geaendert_modellpunkte,
-      "<br>",
-      "<b>Geänderte Hochlärm-Punkte:</b> ",
-      n_geaendert_hochlaerm,
-      "<br>",
+      "<b>Wohnlage:</b> ", Wohnlage_3cat, "<br>",
+      "<b>Punkte insgesamt:</b> ", n_wohnungen, "<br>",
+      "<b>Geänderte Punkte:</b> ", n_geaendert, "<br>",
       "<b>Anteil geändert:</b> ",
       round(anteil_geaendert_prozent, 2),
       " %<br>",
-      "<hr>",
-      "<b>Punkte ohne Fläche nahe dieser Fläche:</b> ",
-      n_ohne_flaeche_nahe,
-      "<br>",
-      "<b>Davon geändert:</b> ",
-      n_geaendert_ohne_flaeche_nahe,
-      "<br>"
+      "<b>Auch bei prior_scale = 35 auffällig:</b> Ja<br>"
     )
   )
 
-
-# ==============================================================================
-# 27D. POPUPS MIETSPIEGEL
-# ==============================================================================
-
-mietspiegel_geo_wgs <- mietspiegel_geo_wgs %>%
+problemgebiete_schwach_wgs <- problemgebiete_schwach_wgs %>%
   mutate(
-    popup_mietspiegel = paste0(
-      "<b>Mietspiegel-Punkt</b><br>",
+    popup_problemgebiet = paste0(
+      "<b>Schwaches Problemgebiet</b><br>",
       "<hr>",
-      "<b>Adress-ID:</b> ",
-      adressid,
-      "<br>",
-      ifelse(
-        "adresse_1" %in% names(mietspiegel_geo_wgs),
-        paste0("<b>Adresse:</b> ", adresse_1, "<br>"),
-        ""
-      ),
-      ifelse(
-        "adresse_2" %in% names(mietspiegel_geo_wgs),
-        paste0("<b>PLZ:</b> ", adresse_2, "<br>"),
-        ""
-      ),
-      ifelse(
-        "adresse_3" %in% names(mietspiegel_geo_wgs),
-        paste0("<b>Ort:</b> ", adresse_3, "<br>"),
-        ""
-      ),
-      ifelse(
-        "adresse_4" %in% names(mietspiegel_geo_wgs),
-        paste0("<b>Gebiet:</b> ", adresse_4, "<br>"),
-        ""
-      ),
-      "<hr>",
-      "<b>In Problemgebiet:</b> ",
-      ifelse(in_problemgebiet, "Ja", "Nein"),
-      "<br>",
-      "<b>Problemgebiet-Flächen-ID:</b> ",
-      ifelse(
-        is.na(problemgebiet_flaechen_id),
-        "-",
-        problemgebiet_flaechen_id
-      ),
-      "<br>"
+      "<b>Wohnlage:</b> ", Wohnlage_3cat, "<br>",
+      "<b>Punkte insgesamt:</b> ", n_wohnungen, "<br>",
+      "<b>Geänderte Punkte:</b> ", n_geaendert, "<br>",
+      "<b>Anteil geändert:</b> ",
+      round(anteil_geaendert_prozent, 2),
+      " %<br>",
+      "<b>Auch bei prior_scale = 35 auffällig:</b> Nein<br>"
     )
   )
 
-mietspiegel_problem <- mietspiegel_geo_wgs %>%
-  filter(in_problemgebiet == TRUE)
-
-mietspiegel_nicht_problem <- mietspiegel_geo_wgs %>%
-  filter(in_problemgebiet == FALSE)
-
 
 # ==============================================================================
-# 27E. KARTENMITTELPUNKT
+# 27H. AUFFÄLLIGE KLEINGEBIETE
 # ==============================================================================
 
-bbox_munich <- st_bbox(wohnlagen_munich_analyse_wgs)
-
-map_center_lng <- mean(c(bbox_munich["xmin"], bbox_munich["xmax"]))
-map_center_lat <- mean(c(bbox_munich["ymin"], bbox_munich["ymax"]))
-
-# Extra: auffällige kleingebiete
 auffaellige_kleingebiete_munich_wgs <- st_transform(
   auffaellige_kleingebiete_munich,
   4326
@@ -1906,25 +1977,28 @@ auffaellige_kleingebiete_munich_wgs <- st_transform(
     popup_kleingebiet = paste0(
       "<b>Auffälliges Kleingebiet</b><br>",
       "<hr>",
-      "<b>Flächen-ID:</b> ", flaechen_id, "<br>",
       "<b>Wohnlage:</b> ", Wohnlage_3cat, "<br>",
-      "<hr>",
-      "<b>Anzahl Punkte:</b> ", n_wohnungen, "<br>",
-      "<b>Normale Modellpunkte:</b> ", n_modellpunkte, "<br>",
-      "<b>Hochlärm-Punkte:</b> ", n_hochlaerm_punkte, "<br>",
-      "<hr>",
-      "<b>Anzahl geändert:</b> ", n_geaendert, "<br>",
-      "<b>Geänderte Modellpunkte:</b> ", n_geaendert_modellpunkte, "<br>",
-      "<b>Geänderte Hochlärm-Punkte:</b> ", n_geaendert_hochlaerm, "<br>",
-      "<b>Anteil geändert:</b> ", round(anteil_geaendert_prozent, 2), " %<br>",
-      "<hr>",
-      "<b>Hinweis:</b> Separat ausgewertet, da weniger als 20 Punkte."
+      "<b>Punkte insgesamt:</b> ", n_wohnungen, "<br>",
+      "<b>Geänderte Punkte:</b> ", n_geaendert, "<br>",
+      "<b>Anteil geändert:</b> ",
+      round(anteil_geaendert_prozent, 2),
+      " %<br>"
     )
   )
 
 
 # ==============================================================================
-# 27F. KARTE ERSTELLEN
+# 27I. KARTENMITTELPUNKT
+# ==============================================================================
+
+bbox_munich <- st_bbox(wohnlagen_munich_analyse_wgs)
+
+map_center_lng <- mean(c(bbox_munich["xmin"], bbox_munich["xmax"]))
+map_center_lat <- mean(c(bbox_munich["ymin"], bbox_munich["ymax"]))
+
+
+# ==============================================================================
+# 27J. KARTE ERSTELLEN
 # ==============================================================================
 
 karte_munich_gesamt <- leaflet(
@@ -1950,9 +2024,6 @@ karte_munich_gesamt <- leaflet(
     weight = 1,
     popup = ~popup_flaeche,
     label = ~paste0(
-      "Fläche ",
-      flaechen_id,
-      " | ",
       Wohnlage_3cat,
       " | ",
       round(anteil_geaendert_prozent, 1),
@@ -1961,21 +2032,36 @@ karte_munich_gesamt <- leaflet(
     group = "Wohnlagenflächen"
   ) %>%
   
+  # Schwache Problemgebiete: normal rot
   addPolygons(
-    data = problemgebiete_munich_wgs,
+    data = problemgebiete_schwach_wgs,
     fillColor = "transparent",
     fillOpacity = 0,
     color = "red",
     weight = 4,
     popup = ~popup_problemgebiet,
     label = ~paste0(
-      "Problemgebiet Fläche ",
-      flaechen_id,
-      " | ",
+      "Schwaches Problemgebiet | ",
       round(anteil_geaendert_prozent, 1),
       " % geändert"
     ),
-    group = "Problemgebiete"
+    group = "Schwache Problemgebiete"
+  ) %>%
+  
+  # Starke Problemgebiete: dunkelrot, darüber gezeichnet
+  addPolygons(
+    data = problemgebiete_stark_wgs,
+    fillColor = "transparent",
+    fillOpacity = 0,
+    color = "#7f0000",
+    weight = 5.5,
+    popup = ~popup_problemgebiet,
+    label = ~paste0(
+      "Starkes Problemgebiet | ",
+      round(anteil_geaendert_prozent, 1),
+      " % geändert"
+    ),
+    group = "Starke Problemgebiete"
   ) %>%
   
   addPolygons(
@@ -1987,9 +2073,7 @@ karte_munich_gesamt <- leaflet(
     dashArray = "6,4",
     popup = ~popup_kleingebiet,
     label = ~paste0(
-      "Auffälliges Kleingebiet Fläche ",
-      flaechen_id,
-      " | ",
+      "Auffälliges Kleingebiet | ",
       n_wohnungen,
       " Punkte | ",
       round(anteil_geaendert_prozent, 1),
@@ -1998,6 +2082,7 @@ karte_munich_gesamt <- leaflet(
     group = "Auffällige Kleingebiete"
   ) %>%
   
+  # Korrekte Modellpunkte: sichtbar, aber ohne Popup
   addCircleMarkers(
     data = modellpunkte_unchanged,
     lng = ~s.long,
@@ -2008,10 +2093,10 @@ karte_munich_gesamt <- leaflet(
     stroke = TRUE,
     weight = 0.7,
     radius = 3,
-    popup = ~popup_text,
     group = "Modellpunkte: unverändert"
   ) %>%
   
+  # Umklassifizierte Modellpunkte: mit Popup
   addCircleMarkers(
     data = modellpunkte_changed,
     lng = ~s.long,
@@ -2026,6 +2111,7 @@ karte_munich_gesamt <- leaflet(
     group = "Modellpunkte: umklassifiziert"
   ) %>%
   
+  # Hochlärm-Punkte: Popup mit korrektem Wohnlage-Label
   addCircleMarkers(
     data = data_munich_laerm_direkt_wgs,
     lng = ~s.long,
@@ -2037,35 +2123,11 @@ karte_munich_gesamt <- leaflet(
     weight = 2.3,
     radius = 6,
     popup = ~popup_text,
+    label = ~paste0(
+      "Hochlärm-Punkt | Neue Wohnlage: ",
+      neue_lage_laerm
+    ),
     group = "Hochlärm-Punkte: direkte Abwertung"
-  ) %>%
-  
-  addCircleMarkers(
-    data = mietspiegel_problem,
-    lng = ~s.long,
-    lat = ~s.lat,
-    fillColor = "red",
-    fillOpacity = 1,
-    color = "darkred",
-    stroke = TRUE,
-    weight = 2.5,
-    radius = 8,
-    popup = ~popup_mietspiegel,
-    group = "Mietspiegel: in Problemgebiet"
-  ) %>%
-  
-  addCircleMarkers(
-    data = mietspiegel_nicht_problem,
-    lng = ~s.long,
-    lat = ~s.lat,
-    fillColor = "blue",
-    fillOpacity = 0.85,
-    color = "darkblue",
-    stroke = TRUE,
-    weight = 1.5,
-    radius = 6,
-    popup = ~popup_mietspiegel,
-    group = "Mietspiegel: nicht in Problemgebiet"
   ) %>%
   
   addLegend(
@@ -2079,20 +2141,17 @@ karte_munich_gesamt <- leaflet(
   addLayersControl(
     baseGroups = c("Basiskarte"),
     overlayGroups = c(
-      "Wohnlagenflächen",
-      "Problemgebiete",
+      "Starke Problemgebiete",
+      "Schwache Problemgebiete",
       "Auffällige Kleingebiete",
       "Modellpunkte: unverändert",
       "Modellpunkte: umklassifiziert",
-      "Hochlärm-Punkte: direkte Abwertung",
-      "Mietspiegel: in Problemgebiet",
-      "Mietspiegel: nicht in Problemgebiet"
+      "Hochlärm-Punkte: direkte Abwertung"
     ),
     options = layersControlOptions(collapsed = FALSE)
   ) %>%
   
-  hideGroup("Modellpunkte: unverändert") %>%
-  hideGroup("Mietspiegel: nicht in Problemgebiet")
+  hideGroup("Modellpunkte: unverändert")
 
 
 # ==============================================================================
@@ -2101,18 +2160,14 @@ karte_munich_gesamt <- leaflet(
 
 saveWidget(
   karte_munich_gesamt,
-  file = paste0(
-    "interaktive_karten/karte_munich_gesamtanalyse_mit_mietspiegel_",
-    suffix,
-    ".html"
-  ),
-  selfcontained = FALSE
+  file = "interaktive_karten/interaktive_karte.html",
+  selfcontained = TRUE
 )
 
 cat("\n✓ Interaktive München-Karte gespeichert:\n")
 cat(
   paste0(
-    "interaktive_karten/karte_munich_gesamtanalyse_mit_mietspiegel_",
+    "interaktive_karten/karte_munich_gesamtanalyse_problemgebiete_stark_schwach_",
     suffix,
     ".html\n"
   )

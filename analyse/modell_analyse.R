@@ -47,6 +47,10 @@ model_gam_zentral_spatial <- readRDS("modelle/gam_model_zentral_spatial.rds")
 
 model_gam_ausserhalb_spatial <- readRDS("modelle/gam_model_ausserhalb_spatial.rds")
 
+model_lärm <- readRDS("results_lin_disc/model_3cat_optimierung.rds")
+
+model_ohne_lärm <- readRDS("modelle/lindisc_model_beides_3cat.rds")
+
 # Modelloutput ansehen
 summary(model_gam_zentral)
 summary(model_gam_ausserhalb_b)
@@ -102,6 +106,13 @@ evaluate_confusion_matrix(model_gam_ausserhalb_spatial,
 evaluate_confusion_matrix(model_gam_zentral_spatial,
                           test_data = model_data_complete_zentral,
                           y_col = "wohnlage_ebene") # 89% accuracy
+
+evaluate_confusion_matrix(model_lärm, test_data = data,
+                          y_col = "c")
+
+evaluate_confusion_matrix(model_ohne_lärm, test_data = data,
+                          y_col = "c")
+
 
 # Random Forest Modelle (accuracy extrem hoch!)
 pred_rf_zentral <- model_rf_zentral$predict_newdata(model_data_complete_zentral)
